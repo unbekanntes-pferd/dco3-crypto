@@ -1,0 +1,11 @@
+[package]
+name = "dco3-crypto"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ring = "0.16.20"
+serde_json = "1.0.89"
+serde = { version = "1.0.149", features = ["serde_derive"] }
