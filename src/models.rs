@@ -1,4 +1,6 @@
 #![allow(non_camel_case_types, dead_code)]
+use std::str::Utf8Error;
+use openssl::{error::ErrorStack};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -15,7 +17,7 @@ pub enum PlainFileKeyVersion {
     AES256CM,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, PartialEq, Debug)]
 pub enum UserKeyPairVersion {
     #[serde(rename = "A")]
     RSA2048,
@@ -24,53 +26,146 @@ pub enum UserKeyPairVersion {
 }
 
 #[derive(Serialize)]
-pub struct FileKey<'a> {
-    key: &'a str,
-    iv: &'a str,
-    version: FileKeyVersion,
-    tag: Option<&'a str>,
+pub struct FileKey {
+    pub key: String,
+    pub iv: String,
+    pub version: FileKeyVersion,
+    pub tag: Option<String>,
 }
 
 #[derive(Serialize)]
-pub struct PlainFileKey<'a> {
-    key: &'a str,
-    iv: &'a str,
-    version: PlainFileKeyVersion,
-    tag: Option<&'a str>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PublicKeyContainer<'a> {
-    version: UserKeyPairVersion,
-    public_key: &'a str,
-    created_at: &'a str,
-    expire_at: &'a str,
-    created_by: u32,
+pub struct PlainFileKey {
+    pub key: String,
+    pub iv: String,
+    pub version: PlainFileKeyVersion,
+    pub tag: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PrivateKeyContainer<'a> {
-    version: UserKeyPairVersion,
-    private_key: &'a str,
-    created_at: &'a str,
-    expire_at: &'a str,
-    created_by: u32,
+pub struct PublicKeyContainer {
+    pub version: UserKeyPairVersion,
+    pub public_key: String,
+    created_at: Option<String>,
+    expire_at: Option<String>,
+    created_by: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserKeyPairContainer<'a> {
-    private_key_container: PrivateKeyContainer<'a>,
-    public_key_container: PublicKeyContainer<'a>,
+pub struct PrivateKeyContainer {
+    pub version: UserKeyPairVersion,
+    pub private_key: String,
+    created_at: Option<String>,
+    expire_at: Option<String>,
+    created_by: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlainUserKeyPairContainer<'a> {
-    private_key_container: PrivateKeyContainer<'a>,
-    public_key_container: PublicKeyContainer<'a>,
+pub struct UserKeyPairContainer {
+    pub private_key_container: PrivateKeyContainer,
+    pub public_key_container: PublicKeyContainer,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlainUserKeyPairContainer {
+    pub private_key_container: PrivateKeyContainer,
+    pub public_key_container: PublicKeyContainer,
+}
+
+impl PrivateKeyContainer {
+    pub fn new(private_key_pem: String, version: UserKeyPairVersion) -> Self {
+        Self {
+            private_key: private_key_pem,
+            version,
+            created_at: None,
+            expire_at: None,
+            created_by: None,
+        }
+    }
+}
+
+impl PublicKeyContainer {
+    pub fn new(public_key_pem: String, version: UserKeyPairVersion) -> Self {
+        Self {
+            public_key: public_key_pem,
+            version,
+            created_at: None,
+            expire_at: None,
+            created_by: None,
+        }
+    }
+}
+
+impl PlainUserKeyPairContainer {
+    pub fn new(
+        private_key_pem: String,
+        public_key_pem: String,
+        version: UserKeyPairVersion,
+    ) -> Self {
+        let public_key_container = PublicKeyContainer::new(public_key_pem, version.clone());
+        let private_key_container = PrivateKeyContainer::new(private_key_pem, version);
+
+        Self {
+            private_key_container,
+            public_key_container,
+        }
+    }
+
+    pub fn new_from_keypair(
+        enc_keypair: UserKeyPairContainer,
+        plain_private_key_pem: &str,
+    ) -> Self {
+        let version = enc_keypair.private_key_container.version;
+        let private_key_container =
+            PrivateKeyContainer::new(plain_private_key_pem.to_string(), version);
+        Self {
+            private_key_container,
+            public_key_container: enc_keypair.public_key_container,
+        }
+    }
+}
+
+impl UserKeyPairContainer {
+    pub fn new_from_plain_keypair(
+        plain_keypair: PlainUserKeyPairContainer,
+        enc_private_key_pem: &str,
+    ) -> Self {
+        let version = plain_keypair.private_key_container.version;
+
+        let private_key_container =
+            PrivateKeyContainer::new(enc_private_key_pem.to_string(), version);
+
+        Self {
+            private_key_container,
+            public_key_container: plain_keypair.public_key_container,
+        }
+    }
+}
+
+impl FileKey {
+    pub fn new_from_plain_key(
+        plain_file_key: PlainFileKey,
+        enc_key: &str,
+        version: FileKeyVersion,
+    ) -> Self {
+        Self {
+            key: enc_key.to_string(),
+            iv: plain_file_key.iv,
+            tag: plain_file_key.tag,
+            version,
+        }
+    }
+}
+
+impl PlainFileKey {
+    pub fn new_from_file_key(enc_file_key: FileKey, plain_file_key: &str) -> Self {
+
+        Self { key: plain_file_key.to_string(), iv: enc_file_key.iv, tag: enc_file_key.tag, version: PlainFileKeyVersion::AES256CM }
+
+    }
 }
 
 #[derive(Serialize)]
@@ -90,37 +185,85 @@ pub struct EncryptionInfo {
     dataspace_key_state: KeyState,
 }
 
+#[derive(Debug)]
 pub enum DracoonCryptoError {
+    RsaOperationFailed,
+    ByteParseError,
     InvalidKeypairVersion,
     InvalidTag,
-    Unknown
+    Unknown,
 }
 
-pub trait DracoonRSACrypto<'a> {
-    fn create_plain_user_keypair() -> PlainUserKeyPairContainer<'a>;
-
-    fn encrypt_private_key(secret: &str, plain_keypair: PlainUserKeyPairContainer) -> UserKeyPairContainer<'a>;
-
-    fn decrypt_prviate_key(secret: &str, keypair: UserKeyPairContainer) -> PlainUserKeyPairContainer<'a>;
-
-    fn encrypt_file_key_public(plain_file_key: PlainFileKey, public_key: PublicKeyContainer) -> FileKey<'a>;
-
-    fn encrypt_file_key(plain_file_key: PlainFileKey, keypair: PlainUserKeyPairContainer) -> FileKey<'a>;
-
-    fn get_file_key_version_public(public_key: &PublicKeyContainer) -> FileKeyVersion;
-
-    fn get_file_key_version(keypair: &PlainUserKeyPairContainer) -> FileKeyVersion;
-
+impl From<ErrorStack> for DracoonCryptoError {
+    fn from(_: ErrorStack) -> Self {
+        Self::RsaOperationFailed
+    }
 }
 
-pub trait DracoonEncrypt {
-    fn encrypt_bytes<'a>(data: Vec<u8>) -> (Vec<u8>, PlainFileKey<'a>);
-
-    fn encrypt_bytes_in_chunks<'a>(data: Vec<u8>) -> (Vec<u8>, PlainFileKey<'a>);
+impl From<Utf8Error> for DracoonCryptoError {
+    fn from(_: Utf8Error) -> Self {
+        Self::ByteParseError
+    }
 }
 
-pub trait DracoonDecrypt {
-    fn decrypt_bytes(data: Vec<u8>, plain_file_key: PlainFileKey) -> Vec<u8>;
+type EncryptionResult = (Vec<u8>, PlainFileKey);
 
-    fn decrypt_bytes_in_chunks(data: Vec<u8>, plain_file_key: PlainFileKey) -> Vec<u8>;
+pub trait PublicKey {
+    fn get_public_key(&self) -> &PublicKeyContainer;
+}
+
+impl PublicKey for PlainUserKeyPairContainer {
+    fn get_public_key(&self) -> &PublicKeyContainer {
+        &self.public_key_container
+    }
+}
+
+impl PublicKey for PublicKeyContainer {
+    fn get_public_key(&self) -> &PublicKeyContainer {
+        &self
+    }
+}
+
+pub trait DracoonRSACrypto {
+    fn create_plain_user_keypair(
+        version: UserKeyPairVersion,
+    ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
+
+    fn encrypt_private_key(
+        secret: &str,
+        plain_keypair: PlainUserKeyPairContainer,
+    ) -> Result<UserKeyPairContainer, DracoonCryptoError>;
+
+    fn decrypt_private_key(
+        secret: &str,
+        keypair: UserKeyPairContainer,
+    ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
+
+    fn encrypt_file_key(
+        plain_file_key: PlainFileKey,
+        public_key: impl PublicKey,
+    ) -> Result<FileKey, DracoonCryptoError>;
+
+    fn decrypt_file_key(
+        file_key: FileKey,
+        keypair: PlainUserKeyPairContainer,
+    ) -> Result<PlainFileKey, DracoonCryptoError>;
+}
+
+pub trait Encrypt {
+    fn encrypt_bytes(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError>;
+
+    fn encrypt_bytes_in_chunks(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError>;
+}
+
+pub trait Decrypt {
+    fn decrypt_bytes(
+        data: Vec<u8>,
+        plain_file_key: PlainFileKey,
+    ) -> Result<Vec<u8>, DracoonCryptoError>;
+
+    fn decrypt_bytes_in_chunks(
+        data: Vec<u8>,
+        plain_file_key: PlainFileKey,
+    ) -> Result<Vec<u8>, DracoonCryptoError>;
 }
