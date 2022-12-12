@@ -46,9 +46,9 @@ pub struct PlainFileKey {
 pub struct PublicKeyContainer {
     pub version: UserKeyPairVersion,
     pub public_key: String,
-    created_at: Option<String>,
-    expire_at: Option<String>,
-    created_by: Option<String>,
+    pub created_at: Option<String>,
+    pub expire_at: Option<String>,
+    pub created_by: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -56,9 +56,9 @@ pub struct PublicKeyContainer {
 pub struct PrivateKeyContainer {
     pub version: UserKeyPairVersion,
     pub private_key: String,
-    created_at: Option<String>,
-    expire_at: Option<String>,
-    created_by: Option<String>,
+    pub created_at: Option<String>,
+    pub expire_at: Option<String>,
+    pub created_by: Option<String>,
 }
 
 #[derive(Serialize)]

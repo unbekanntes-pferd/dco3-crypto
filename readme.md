@@ -1,4 +1,15 @@
-# dco3-crypto - DRACOON Crypto crate for Rust
+  <h3 align="center">dco3-crypto</h3>
+
+  <p align="center">
+    DRACOON Crypto utils in Rust
+    <br />
+    <a href="https://github.com/unbekanntes-pferd/dco3-crypto"><strong>Explore the docs »</strong></a>
+    <br />
+    <a href="https://github.com/unbekanntes-pferd/dco3-crypto/issues">Report Bug</a>
+  </p>
+</p>
+
+# dco3-crypto
 
 ## What is this?
 
