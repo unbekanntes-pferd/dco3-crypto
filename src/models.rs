@@ -1,7 +1,11 @@
 #![allow(non_camel_case_types, dead_code)]
 use std::str::Utf8Error;
 use openssl::{error::ErrorStack};
+use openssl::rand::rand_bytes;
+use openssl::base64;
 use serde::Serialize;
+
+const DEFAULT_CHUNKSIZE: usize = 33554432;
 
 #[derive(Serialize)]
 pub enum FileKeyVersion {
@@ -166,6 +170,30 @@ impl PlainFileKey {
         Self { key: plain_file_key.to_string(), iv: enc_file_key.iv, tag: enc_file_key.tag, version: PlainFileKeyVersion::AES256CM }
 
     }
+
+    pub fn try_new_for_encryption() -> Result<Self, DracoonCryptoError> {
+
+        let mut key: [u8; 32] = [0; 32];
+        rand_bytes(&mut key)?;
+
+        let mut iv: [u8; 12] = [0; 12];
+        rand_bytes(&mut iv)?;
+
+        let key = base64::encode_block(&key);
+        let iv = base64::encode_block(&iv);
+
+        let plain_file_key = PlainFileKey { key, iv, tag: None, version: PlainFileKeyVersion::AES256CM };
+
+        Ok(plain_file_key)
+
+    }
+
+    pub fn finalize_encryption(&mut self, tag: String) {
+        self.tag = Some(tag);
+    }
+
+
+
 }
 
 #[derive(Serialize)]
@@ -206,7 +234,7 @@ impl From<Utf8Error> for DracoonCryptoError {
     }
 }
 
-type EncryptionResult = (Vec<u8>, PlainFileKey);
+pub type EncryptionResult = (Vec<u8>, PlainFileKey);
 
 pub trait PublicKey {
     fn get_public_key(&self) -> &PublicKeyContainer;
@@ -251,13 +279,13 @@ pub trait DracoonRSACrypto {
 }
 
 pub trait Encrypt {
-    fn encrypt_bytes(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError>;
+    fn encrypt(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError>;
 
-    fn encrypt_bytes_in_chunks(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError>;
+    fn encrypt_in_chunks(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError>;
 }
 
 pub trait Decrypt {
-    fn decrypt_bytes(
+    fn decrypt(
         data: Vec<u8>,
         plain_file_key: PlainFileKey,
     ) -> Result<Vec<u8>, DracoonCryptoError>;

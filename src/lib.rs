@@ -4,7 +4,10 @@ use openssl::md::Md;
 use openssl::pkey::PKey;
 use openssl::pkey_ctx::PkeyCtx;
 use openssl::rsa::{Rsa, Padding};
-use openssl::symm::Cipher;
+use openssl::symm::{Cipher, encrypt_aead, Crypter, decrypt_aead};
+use openssl::rand::rand_bytes;
+
+
 
 mod models;
 
@@ -153,6 +156,61 @@ impl DracoonRSACrypto for DracoonCrypto {
         let plain_file_key = base64::encode_block(&buf);
 
         Ok(PlainFileKey::new_from_file_key(file_key, &plain_file_key))
+    }
+}
+
+impl Encrypt for DracoonCrypto {
+    fn encrypt(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError> {
+
+        let cipher = Cipher::aes_256_gcm();
+
+        let mut plain_file_key = PlainFileKey::try_new_for_encryption()?;
+
+        let key = base64::decode_block(&plain_file_key.key)?;
+        let iv = base64::decode_block(&plain_file_key.iv)?;
+
+        let aad: [u8; 8] = [0; 8];
+        let mut tag = [0; 16];
+
+        let res = encrypt_aead(cipher, &key, Some(&iv), &aad, &data, &mut tag)?;
+
+        let tag = base64::encode_block(&tag);
+        plain_file_key.finalize_encryption(tag);
+
+        Ok((res, plain_file_key))
+
+    }
+
+    fn encrypt_in_chunks(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError> {
+        todo!()
+    }
+
+}
+
+impl Decrypt for DracoonCrypto {
+    fn decrypt(
+        data: Vec<u8>,
+        plain_file_key: PlainFileKey,
+    ) -> Result<Vec<u8>, DracoonCryptoError> {
+
+        let cipher = Cipher::aes_256_gcm();
+
+        let key = base64::decode_block(&plain_file_key.key)?;
+        let iv = base64::decode_block(&plain_file_key.iv)?;
+        let tag = base64::decode_block(&plain_file_key.tag.ok_or(DracoonCryptoError::ByteParseError)?)?;
+
+        let aad: [u8; 8] = [0; 8];
+
+        let res = decrypt_aead(cipher, &key, Some(&iv), &aad, &data, &tag)?;
+
+        Ok(res)
+    }
+
+    fn decrypt_bytes_in_chunks(
+        data: Vec<u8>,
+        plain_file_key: PlainFileKey,
+    ) -> Result<Vec<u8>, DracoonCryptoError> {
+        todo!()
     }
 }
 
@@ -310,6 +368,21 @@ mod tests {
 
         assert_eq!(key, plain_file_key.key);
     
+    }
+
+    #[test]
+    fn test_message_encryption() {
+
+        let message = b"Encrypt me please";
+
+        let enc_message = DracoonCrypto::encrypt(message.to_vec()).expect("Should not fail");
+
+        assert_ne!(b"Encrypt me please".to_vec(),enc_message.0);
+        assert!(enc_message.1.tag != None);
+
+        let plain_message = DracoonCrypto::decrypt(enc_message.0, enc_message.1).expect("Should not fail");
+        assert_eq!(b"Encrypt me please".to_vec(), plain_message);
+
     }
 
 }
