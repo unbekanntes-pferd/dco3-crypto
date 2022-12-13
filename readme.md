@@ -1,3 +1,4 @@
+  [![Rust](https://github.com/unbekanntes-pferd/dco3-crypto/actions/workflows/testing.yml/badge.svg?branch=master)](https://github.com/unbekanntes-pferd/dco3-crypto/actions/workflows/testing.yml)
   <h3 align="center">dco3-crypto</h3>
 
   <p align="center">
