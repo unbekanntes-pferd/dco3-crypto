@@ -3,15 +3,12 @@ use openssl::base64;
 use openssl::md::Md;
 use openssl::pkey::PKey;
 use openssl::pkey_ctx::PkeyCtx;
-use openssl::rsa::{Rsa, Padding};
-use openssl::symm::{Cipher, encrypt_aead, Crypter, decrypt_aead};
-use openssl::rand::rand_bytes;
-
-
+use openssl::rsa::{Padding, Rsa};
+use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
 
 mod models;
 
-struct DracoonCrypto;
+pub struct DracoonCrypto;
 
 impl DracoonRSACrypto for DracoonCrypto {
     fn create_plain_user_keypair(
@@ -89,12 +86,11 @@ impl DracoonRSACrypto for DracoonCrypto {
         let public_key_pem = public_key.get_public_key().public_key.as_bytes();
         let rsa = Rsa::public_key_from_pem(public_key_pem)?;
 
-        
         let pkey = PKey::from_rsa(rsa)?;
 
         let file_key = &plain_file_key.key;
         let file_key = base64::decode_block(file_key)?;
-  
+
         let file_key_version: FileKeyVersion = match public_key.get_public_key().version {
             UserKeyPairVersion::RSA2048 => FileKeyVersion::RSA2048_AES256GCM,
             UserKeyPairVersion::RSA4096 => FileKeyVersion::RSA4096_AES256GCM,
@@ -131,8 +127,7 @@ impl DracoonRSACrypto for DracoonCrypto {
     ) -> Result<PlainFileKey, DracoonCryptoError> {
         let private_key_pem = keypair.private_key_container.private_key.as_bytes();
         let rsa = Rsa::private_key_from_pem(private_key_pem)?;
-        
-        
+
         let pkey = PKey::from_rsa(rsa)?;
 
         let enc_file_key = base64::decode_block(&file_key.key)?;
@@ -161,7 +156,6 @@ impl DracoonRSACrypto for DracoonCrypto {
 
 impl Encrypt for DracoonCrypto {
     fn encrypt(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError> {
-
         let cipher = Cipher::aes_256_gcm();
 
         let mut plain_file_key = PlainFileKey::try_new_for_encryption()?;
@@ -175,29 +169,27 @@ impl Encrypt for DracoonCrypto {
         let res = encrypt_aead(cipher, &key, Some(&iv), &aad, &data, &mut tag)?;
 
         let tag = base64::encode_block(&tag);
-        plain_file_key.finalize_encryption(tag);
+        plain_file_key.set_tag(tag);
 
         Ok((res, plain_file_key))
-
     }
 
-    fn encrypt_in_chunks(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError> {
-        todo!()
+    fn get_encrypter(buffer: &mut Vec<u8>) -> Result<Crypter, DracoonCryptoError> {
+        Crypter::try_new_for_encryption(buffer)
     }
-
 }
 
 impl Decrypt for DracoonCrypto {
-    fn decrypt(
-        data: Vec<u8>,
-        plain_file_key: PlainFileKey,
-    ) -> Result<Vec<u8>, DracoonCryptoError> {
-
+    fn decrypt(data: Vec<u8>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError> {
         let cipher = Cipher::aes_256_gcm();
 
         let key = base64::decode_block(&plain_file_key.key)?;
         let iv = base64::decode_block(&plain_file_key.iv)?;
-        let tag = base64::decode_block(&plain_file_key.tag.ok_or(DracoonCryptoError::ByteParseError)?)?;
+        let tag = base64::decode_block(
+            &plain_file_key
+                .tag
+                .ok_or(DracoonCryptoError::ByteParseError)?,
+        )?;
 
         let aad: [u8; 8] = [0; 8];
 
@@ -206,16 +198,18 @@ impl Decrypt for DracoonCrypto {
         Ok(res)
     }
 
-    fn decrypt_bytes_in_chunks(
-        data: Vec<u8>,
+    fn get_decrypter(
         plain_file_key: PlainFileKey,
-    ) -> Result<Vec<u8>, DracoonCryptoError> {
-        todo!()
+        buffer: &mut Vec<u8>,
+    ) -> Result<models::Crypter, DracoonCryptoError> {
+        Crypter::try_new_for_decryption(plain_file_key, buffer)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
     use super::*;
 
     #[test]
@@ -325,15 +319,16 @@ mod tests {
             version: PlainFileKeyVersion::AES256CM,
         };
 
-        let enc_file_key = DracoonCrypto::encrypt_file_key(plain_file_key, public_key_container).expect("Should not fail");
+        let enc_file_key = DracoonCrypto::encrypt_file_key(plain_file_key, public_key_container)
+            .expect("Should not fail");
 
         assert_ne!(key.clone(), enc_file_key.key);
         assert_eq!("123456", enc_file_key.iv);
 
-        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_4096_keypair).expect("Should not fail");
+        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_4096_keypair)
+            .expect("Should not fail");
 
         assert_eq!(key, plain_file_key.key);
-    
     }
 
     #[test]
@@ -359,30 +354,102 @@ mod tests {
             version: PlainFileKeyVersion::AES256CM,
         };
 
-        let enc_file_key = DracoonCrypto::encrypt_file_key(plain_file_key, public_key_container).expect("Should not fail");
+        let enc_file_key = DracoonCrypto::encrypt_file_key(plain_file_key, public_key_container)
+            .expect("Should not fail");
 
         assert_ne!(key.clone(), enc_file_key.key);
         assert_eq!("123456", enc_file_key.iv);
 
-        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_2048_keypair).expect("Should not fail");
+        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_2048_keypair)
+            .expect("Should not fail");
 
         assert_eq!(key, plain_file_key.key);
-    
     }
 
     #[test]
     fn test_message_encryption() {
-
         let message = b"Encrypt me please";
 
         let enc_message = DracoonCrypto::encrypt(message.to_vec()).expect("Should not fail");
 
-        assert_ne!(b"Encrypt me please".to_vec(),enc_message.0);
+        assert_ne!(b"Encrypt me please".to_vec(), enc_message.0);
         assert!(enc_message.1.tag != None);
 
-        let plain_message = DracoonCrypto::decrypt(enc_message.0, enc_message.1).expect("Should not fail");
+        let plain_message =
+            DracoonCrypto::decrypt(enc_message.0, enc_message.1).expect("Should not fail");
         assert_eq!(b"Encrypt me please".to_vec(), plain_message);
+    }
+    #[test]
+    fn test_chunked_message_decryption() {
+        let message = b"Encrypt this very long message and decrypt it in chunks";
+
+        let message = DracoonCrypto::encrypt(message.to_vec()).expect("Should not fail");
+
+        let mut cursor = std::io::Cursor::new(&message.0);
+
+        let buff_len = message.0.len() + Cipher::aes_256_gcm().block_size();
+
+        let mut chunk = [0u8; 5];
+        let mut buf = vec![0u8; buff_len];
+
+        let mut decrypter =
+            DracoonCrypto::get_decrypter(message.1, &mut buf).expect("Should not fail");
+        let mut count: usize = 0;
+
+    
+        while cursor.read_exact(&mut chunk).is_ok() {
+            count += decrypter.update(&chunk).expect("Should not fail");
+        }
+
+        count += decrypter
+            .finalize()
+            .expect("Should not fail");
+
+        let plain_message = std::str::from_utf8(decrypter.get_message()).expect("Should not fail");
+
+        assert_eq!(count, message.0.len());
+        assert_eq!(
+            plain_message,
+            "Encrypt this very long message and decrypt it in chunks"
+        );
+    }
+
+    
+    #[test]
+    fn test_chunked_message_encryption() {
+        let message = b"Encrypt this very long message in chunks and decrypt it";
+
+        let buff_len = message.len() + Cipher::aes_256_gcm().block_size();
+
+        let mut chunk = [0u8; 5];
+        let mut buf = vec![0u8; buff_len];
+
+        let mut encrypter =
+        DracoonCrypto::get_encrypter(&mut buf).expect("Should not fail");
+
+        let mut cursor = std::io::Cursor::new(&message);
+
+        let mut count: usize = 0;
+
+        while cursor.read_exact(&mut chunk).is_ok() {
+            count += encrypter.update(&chunk).expect("Should not fail");
+        }
+
+        count += encrypter
+            .finalize()
+            .expect("Should not fail");
+
+        assert_eq!(count, message.len());
+
+        let enc_message = encrypter.get_message().to_vec();
+        let plain_file_key = encrypter.get_plain_file_key();
+        let plain_message = DracoonCrypto::decrypt(enc_message, plain_file_key).expect("Should not fail");
+
+        assert_eq!(plain_message, b"Encrypt this very long message in chunks and decrypt it");
+
 
     }
+
+
 
 }
