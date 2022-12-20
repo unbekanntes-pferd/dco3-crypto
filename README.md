@@ -33,4 +33,4 @@ Using the crate binds to the latest openssl version and is compiled in vendored 
 ## Documentation
 
 [Documentation](https://crates.io/crates/dco3_crypto)
-All documentation is provided via docs on [crates.io](https://crates.io)
+All documentation is provided via docs on [docs.rs](https://docs.rs/dco3_crypto/latest/dco3_crypto/)
