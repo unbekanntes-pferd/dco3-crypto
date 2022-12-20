@@ -1,5 +1,5 @@
 [package]
-name = "dco3-crypto"
+name = "dco3_crypto"
 version = "0.1.0"
 edition = "2021"
 
