@@ -2,6 +2,14 @@
 name = "dco3_crypto"
 version = "0.1.0"
 edition = "2021"
+authors = ["Octavio Simone"]
+repository = "https://github.com/unbekanntes-pferd/dco3-crypto"
+homepage = "https://github.com/unbekanntes-pferd/dco3-crypto"
+license = "MIT"
+readme = "README.md"
+license-file = "LICENSE"
+keywords = ["dracoon", "cryptography", "openssl"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
