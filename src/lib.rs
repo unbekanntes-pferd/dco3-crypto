@@ -264,10 +264,10 @@ impl Encrypt for DracoonCrypto {
         let key = base64::decode_block(&plain_file_key.key)?;
         let iv = base64::decode_block(&plain_file_key.iv)?;
 
-        let aad: [u8; 8] = [0; 8];
+        let aad = b"";
         let mut tag = [0; 16];
 
-        let res = encrypt_aead(cipher, &key, Some(&iv), &aad, &data, &mut tag)?;
+        let res = encrypt_aead(cipher, &key, Some(&iv), aad, &data, &mut tag)?;
 
         let tag = base64::encode_block(&tag);
         plain_file_key.set_tag(tag);
@@ -338,9 +338,9 @@ impl Decrypt for DracoonCrypto {
                 .ok_or(DracoonCryptoError::ByteParseError)?,
         )?;
 
-        let aad: [u8; 8] = [0; 8];
+        let aad = b"";
 
-        let res = decrypt_aead(cipher, &key, Some(&iv), &aad, &data, &tag)?;
+        let res = decrypt_aead(cipher, &key, Some(&iv), aad, &data, &tag)?;
 
         Ok(res)
     }

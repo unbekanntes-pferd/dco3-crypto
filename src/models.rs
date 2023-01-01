@@ -364,7 +364,7 @@ impl <'b> Crypter<'b> {
 
         let mut crypter = OpenSSLCrypter::new(cipher, Mode::Decrypt, &key, Some(&iv))?;
 
-        crypter.aad_update(&[0u8; 8])?;
+        crypter.aad_update(b"")?;
         crypter.set_tag(&tag)?;
 
         Ok(Crypter { crypter, buffer, count: 0, plain_file_key, mode: Mode::Decrypt })
@@ -377,7 +377,7 @@ impl <'b> Crypter<'b> {
         let iv = base64::decode_block(&plain_file_key.iv)?;
 
         let mut crypter = OpenSSLCrypter::new(cipher, Mode::Encrypt, &key, Some(&iv))?;
-        crypter.aad_update(&[0u8; 8])?;
+        crypter.aad_update(b"")?;
 
         Ok(Crypter { crypter, buffer, count: 0, plain_file_key, mode: Mode::Encrypt })
     }
