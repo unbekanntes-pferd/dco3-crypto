@@ -399,17 +399,15 @@ impl <'b> Crypter<'b> {
 
         let count = self.crypter.finalize(&mut self.buffer[self.count..])?;
 
-        match self.mode {
-            Mode::Encrypt => {
-                let mut buf = [0u8; 16];
-                self.crypter.get_tag(&mut buf)?; 
-                let tag = base64::encode_block(&buf);
-                self.plain_file_key.tag = Some(tag);
-            },
-            Mode::Decrypt => ()
+        if let Mode::Encrypt = self.mode {
+            let mut buf = [0u8; 16];
+            self.crypter.get_tag(&mut buf)?; 
+            let tag = base64::encode_block(&buf);
+            self.plain_file_key.tag = Some(tag);
+
         };
 
-        Ok(count)
+       Ok(count)
     }
 
     pub fn get_message(&mut self) -> &Vec<u8> {
