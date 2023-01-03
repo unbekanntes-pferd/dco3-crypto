@@ -16,7 +16,7 @@ use openssl::md::Md;
 use openssl::pkey::PKey;
 use openssl::pkey_ctx::PkeyCtx;
 use openssl::rsa::{Padding, Rsa};
-use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
+use openssl::symm::{decrypt_aead, encrypt_aead, Cipher, Crypter as OpenSslCrypter, Mode};
 
 mod models;
 
@@ -246,7 +246,7 @@ impl DracoonRSACrypto for DracoonCrypto {
 /// Implements encryption based on AES256 GCM.
 /// Provides function to encrypt on the fly and another one to create a Crypter in order
 /// to encrypt in chunks. 
-impl Encrypt for DracoonCrypto {
+impl Encrypt<OpenSslCrypter> for DracoonCrypto {
     /// Encrypts bytes on the fly - full message is expected and passed as data.
     /// 
     /// # Example
@@ -286,7 +286,7 @@ impl Encrypt for DracoonCrypto {
     /// 
     /// # Example
     /// ```
-    /// use dco3_crypto::{DracoonCrypto, Encrypt};
+    /// use dco3_crypto::{DracoonCrypto, Encrypt, ChunkedEncryption};
     /// use openssl::symm::Cipher;
     /// use std::io::Read;
     /// 
@@ -308,7 +308,7 @@ impl Encrypt for DracoonCrypto {
     /// let plain_file_key = encrypter.get_plain_file_key();
     /// 
     /// ```
-    fn get_encrypter(buffer: &mut Vec<u8>) -> Result<Crypter, DracoonCryptoError> {
+    fn get_encrypter(buffer: &mut Vec<u8>) -> Result<Crypter<OpenSslCrypter>, DracoonCryptoError> {
         Crypter::try_new_for_encryption(buffer)
     }
 }
@@ -316,7 +316,7 @@ impl Encrypt for DracoonCrypto {
 /// Implements decryption based on AES256 GCM.
 /// Provides function to decrypt on the fly and another one to create a Crypter in order
 /// to decrypt in chunks. 
-impl Decrypt for DracoonCrypto {
+impl Decrypt<OpenSslCrypter> for DracoonCrypto {
     /// Decrypts bytes on the fly - full message is expected and passed as data.
     /// 
     /// # Example
@@ -356,7 +356,7 @@ impl Decrypt for DracoonCrypto {
     /// 
     /// # Example
     /// ```
-    /// use dco3_crypto::{DracoonCrypto, Encrypt, Decrypt};
+    /// use dco3_crypto::{DracoonCrypto, Encrypt, Decrypt, ChunkedEncryption};
     /// use openssl::symm::Cipher;
     /// use std::io::Read;
     /// let message = b"Encrypt this very long message in chunks and decrypt it";
@@ -382,9 +382,78 @@ impl Decrypt for DracoonCrypto {
     fn get_decrypter(
         plain_file_key: PlainFileKey,
         buffer: &mut Vec<u8>,
-    ) -> Result<models::Crypter, DracoonCryptoError> {
+    ) -> Result<models::Crypter<OpenSslCrypter>, DracoonCryptoError> {
         Crypter::try_new_for_decryption(plain_file_key, buffer)
     }
+}
+
+impl <'b> ChunkedEncryption<'b, OpenSslCrypter> for  Crypter<'b, OpenSslCrypter> {
+    fn try_new_for_decryption(plain_file_key: PlainFileKey, buffer: &'b mut Vec<u8>) -> Result<Self, DracoonCryptoError> {
+       let cipher = Cipher::aes_256_gcm();
+       let key = base64::decode_block(&plain_file_key.key)?;
+       let iv = base64::decode_block(&plain_file_key.iv)?;
+       let tag = plain_file_key.tag.clone().ok_or(DracoonCryptoError::CrypterOperationFailed)?;
+       let tag = base64::decode_block(&tag)?;
+
+       let mut crypter = OpenSslCrypter::new(cipher, Mode::Decrypt, &key, Some(&iv))?;
+
+       crypter.aad_update(b"")?;
+       crypter.set_tag(&tag)?;
+
+       Ok(Crypter { crypter, buffer, count: 0, plain_file_key, mode: Mode::Decrypt })
+   }
+
+    fn try_new_for_encryption(buffer: &'b mut Vec<u8>) -> Result<Self, DracoonCryptoError> {
+       let cipher = Cipher::aes_256_gcm();
+       let plain_file_key = PlainFileKey::try_new_for_encryption()?;
+       let key = base64::decode_block(&plain_file_key.key)?;
+       let iv = base64::decode_block(&plain_file_key.iv)?;
+
+       let mut crypter = OpenSslCrypter::new(cipher, Mode::Encrypt, &key, Some(&iv))?;
+       crypter.aad_update(b"")?;
+
+       Ok(Crypter { crypter, buffer, count: 0, plain_file_key, mode: Mode::Encrypt })
+   }
+
+    fn update(&mut self, data: &[u8]) -> Result<usize, DracoonCryptoError> {
+
+       match self.crypter.update(data, &mut self.buffer[self.count..]) {
+           Ok(count) => {self.count += count; Ok(count)},
+           Err(_) => Err(DracoonCryptoError::CrypterOperationFailed)
+       }
+
+   }
+
+    fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError> {
+       Ok(self.crypter.set_tag(tag)?)
+   }
+
+   fn finalize(&mut self) -> Result<usize, DracoonCryptoError> {
+
+       let count = self.crypter.finalize(&mut self.buffer[self.count..])?;
+
+       if let Mode::Encrypt = self.mode {
+           let mut buf = [0u8; 16];
+           self.crypter.get_tag(&mut buf)?; 
+           let tag = base64::encode_block(&buf);
+           self.plain_file_key.tag = Some(tag);
+
+       };
+
+      Ok(count)
+   }
+
+   fn get_message(&mut self) -> &Vec<u8> {
+
+       self.buffer.truncate(self.count);
+
+       &self.buffer
+   }
+
+   fn get_plain_file_key(self) -> PlainFileKey {
+       self.plain_file_key
+   }
+
 }
 
 #[cfg(test)]
