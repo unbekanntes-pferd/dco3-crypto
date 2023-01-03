@@ -251,9 +251,12 @@ pub struct EncryptionInfo {
 #[derive(Debug)]
 pub enum DracoonCryptoError {
     RsaOperationFailed,
+    RsaImportFailed,
     ByteParseError,
     CrypterOperationFailed,
     InvalidKeypairVersion,
+    BadData,
+    InvalidFileKeyFormat(String),
     InvalidTag,
     Unknown,
 }
@@ -290,7 +293,7 @@ impl PublicKey for PlainUserKeyPairContainer {
 /// Returns the public key of a public key container as reference
 impl PublicKey for PublicKeyContainer {
     fn get_public_key(&self) -> &PublicKeyContainer {
-        &self
+        self
     }
 }
 
@@ -345,8 +348,11 @@ pub trait Decrypt<C> {
 /// Allows chunked en- and decryption.
 /// Holds a reference to a buffer to store the mssage, processed bytes as count and 
 /// the used plain file key and mode.
+/// Requires generic type annotation
+/// The type 'C' represents an internal handler for the encryption functions with chunking 
 pub struct Crypter <'b, C> {
-    // needs to be generic in future release
+    // this is a generic type representing the internal handler for chunked encryption
+    // example implementation see lib.rs for openssl Crypter
     pub crypter: C,
     pub buffer: &'b mut Vec<u8>,
     pub count: usize,
@@ -354,13 +360,21 @@ pub struct Crypter <'b, C> {
     pub mode: Mode
 }
 
+/// Represents all functions required for a Crypter to perform chunked encryption / decryption
 pub trait ChunkedEncryption<'b, C> {
+    /// Returns a Crypter for decryption by passing the plain file key and a writable (mutable) buffer
     fn try_new_for_decryption(plain_file_key: PlainFileKey, buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+    /// Returns a Crypter for enryption by passing a writable (mutable) buffer
     fn try_new_for_encryption(buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+    /// Update the Crypter with given data
     fn update(&mut self, data: &[u8]) -> Result<usize, DracoonCryptoError>;
+    /// Set the tag before finalizing the encryption
     fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError>;
+    /// Finalize decryption / encryption
     fn finalize(&mut self) -> Result<usize, DracoonCryptoError>;
+    /// Get the message (result of encryption / decryption) from buffer
     fn get_message(&mut self) -> &Vec<u8>;
+    /// Get the plain file key used for either encryption or decryption
     fn get_plain_file_key(self) -> PlainFileKey;
 
 }

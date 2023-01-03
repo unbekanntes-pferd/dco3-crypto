@@ -1,13 +1,12 @@
 [package]
 name = "dco3_crypto"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Octavio Simone"]
 repository = "https://github.com/unbekanntes-pferd/dco3-crypto"
 homepage = "https://github.com/unbekanntes-pferd/dco3-crypto"
 license = "MIT"
 readme = "README.md"
-license-file = "LICENSE"
 keywords = ["dracoon", "cryptography", "openssl"]
 description = "Symmetric and asymmetric encryption for DRACOON in Rust."
 
