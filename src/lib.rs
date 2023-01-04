@@ -423,14 +423,14 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
             .map_err(|_| DracoonCryptoError::InvalidFileKeyFormat("Invalid tag.".to_string()))?;
 
         let mut crypter = OpenSslCrypter::new(cipher, Mode::Decrypt, &key, Some(&iv))
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed)?;
+            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Initializing Crypter failed.".to_string()))?;
 
         crypter
             .aad_update(b"")
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed)?;
+            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Skipping AAD failed.".to_string()))?;
         crypter
             .set_tag(&tag)
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed)?;
+            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Setting tag failed.".to_string()))?;
 
         Ok(Crypter {
             crypter,
@@ -452,10 +452,10 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
         })?;
 
         let mut crypter = OpenSslCrypter::new(cipher, Mode::Encrypt, &key, Some(&iv))
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed)?;
+            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Initializing Crypter failed.".to_string()))?;
         crypter
             .aad_update(b"")
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed)?;
+            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Skipping AAD failed.".to_string()))?;
 
         Ok(Crypter {
             crypter,
@@ -472,7 +472,7 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
                 self.count += count;
                 Ok(count)
             }
-            Err(_) => Err(DracoonCryptoError::CrypterOperationFailed),
+            Err(_) => Err(DracoonCryptoError::CrypterOperationFailed("Updating buffer failed (bad data?).".to_string())),
         }
     }
 
@@ -480,20 +480,20 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
         self
             .crypter
             .set_tag(tag)
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed)
+            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Setting tag failed.".to_string()))
     }
 
     fn finalize(&mut self) -> Result<usize, DracoonCryptoError> {
         let count = self
             .crypter
             .finalize(&mut self.buffer[self.count..])
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed)?;
+            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Finalizing Crypter failed.".to_string()))?;
 
         if let Mode::Encrypt = self.mode {
             let mut buf = [0u8; 16];
             self.crypter
                 .get_tag(&mut buf)
-                .map_err(|_| DracoonCryptoError::CrypterOperationFailed)?;
+                .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Getting tag failed.".to_string()))?;
             let tag = base64::encode_block(&buf);
             self.plain_file_key.tag = Some(tag);
         };
@@ -689,20 +689,18 @@ mod tests {
     fn test_chunked_message_decryption() {
         let message = b"Encrypt this very long message and decrypt it in chunks";
 
-        let message = DracoonCrypto::encrypt(message.to_vec()).expect("Should not fail");
+        let (enc_message, plain_file_key) = DracoonCrypto::encrypt(message.to_vec()).expect("Should not fail");
 
-        let mut cursor = std::io::Cursor::new(&message.0);
-
-        let buff_len = message.0.len() + Cipher::aes_256_gcm().block_size();
-
-        let mut chunk = [0u8; 5];
+        let buff_len = enc_message.len() + Cipher::aes_256_gcm().block_size();
+        
+        let mut chunks = enc_message.chunks(5);
         let mut buf = vec![0u8; buff_len];
 
         let mut decrypter =
-            DracoonCrypto::get_decrypter(message.1, &mut buf).expect("Should not fail");
+            DracoonCrypto::get_decrypter(plain_file_key, &mut buf).expect("Should not fail");
         let mut count: usize = 0;
 
-        while cursor.read_exact(&mut chunk).is_ok() {
+        while let Some(chunk) = chunks.next() {
             count += decrypter.update(&chunk).expect("Should not fail");
         }
 
@@ -710,7 +708,7 @@ mod tests {
 
         let plain_message = std::str::from_utf8(decrypter.get_message()).expect("Should not fail");
 
-        assert_eq!(count, message.0.len());
+        assert_eq!(count, enc_message.len());
         assert_eq!(
             plain_message,
             "Encrypt this very long message and decrypt it in chunks"

@@ -253,7 +253,7 @@ pub enum DracoonCryptoError {
     RsaOperationFailed,
     RsaImportFailed,
     ByteParseError,
-    CrypterOperationFailed,
+    CrypterOperationFailed(String),
     InvalidKeypairVersion,
     BadData,
     InvalidFileKeyFormat(String),
