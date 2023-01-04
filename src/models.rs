@@ -28,7 +28,7 @@ pub enum PlainFileKeyVersion {
 
 /// Represents the user keypair version 
 /// Standard is 4096 bit (2048 bit for compatibility only)
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum UserKeyPairVersion {
     #[serde(rename = "A")]
     RSA2048,
