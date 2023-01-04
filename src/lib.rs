@@ -18,6 +18,8 @@ use openssl::pkey_ctx::PkeyCtx;
 use openssl::rsa::{Padding, Rsa};
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher, Crypter as OpenSslCrypter, Mode};
 
+use log::{debug, error};
+
 mod models;
 
 pub use models::*;
@@ -62,6 +64,8 @@ impl DracoonRSACrypto for DracoonCrypto {
             .flat_map(|buf| std::str::from_utf8(buf))
             .collect::<String>();
 
+        debug!("Keypair (version: {:?}) generated.", version);
+
         Ok(PlainUserKeyPairContainer::new(
             private_key_pem,
             public_key_pem,
@@ -92,6 +96,11 @@ impl DracoonRSACrypto for DracoonCrypto {
         let private_key_pem =
             rsa.private_key_to_pem_pkcs8_passphrase(Cipher::aes_256_cbc(), secret)?;
         let private_key_pem = std::str::from_utf8(&private_key_pem)?;
+
+        debug!(
+            "Keypair (private key version: {:?}) encrypted.",
+            plain_keypair.private_key_container.version
+        );
 
         Ok(UserKeyPairContainer::new_from_plain_keypair(
             plain_keypair,
@@ -125,6 +134,11 @@ impl DracoonRSACrypto for DracoonCrypto {
             .iter()
             .flat_map(|buf| std::str::from_utf8(buf))
             .collect::<String>();
+
+        debug!(
+            "Keypair (private key version: {:?}) decrypted.",
+            keypair.private_key_container.version
+        );
 
         Ok(PlainUserKeyPairContainer::new_from_keypair(
             keypair,
@@ -301,16 +315,15 @@ impl Encrypt<OpenSslCrypter> for DracoonCrypto {
     /// use openssl::symm::Cipher;
     /// use std::io::Read;
     ///
-    /// let message = b"Encrypt this very long message in chunks and decrypt it";
+    /// let mut message = b"Encrypt this very long message in chunks and decrypt it";
     /// let buff_len = message.len() + Cipher::aes_256_gcm().block_size();
-    /// let mut chunk = [0u8; 5];
     /// let mut buf = vec![0u8; buff_len];
     /// let mut encrypter =
     /// DracoonCrypto::get_encrypter(&mut buf).unwrap();
     /// let mut count: usize = 0;
-    /// let mut cursor = std::io::Cursor::new(&message);
-    ///
-    /// while cursor.read_exact(&mut chunk).is_ok() {
+    /// const CHUNKSIZE: usize = 8;
+    /// let mut chunks = message.chunks(CHUNKSIZE);
+    /// while let Some(chunk) = chunks.next() {
     /// count += encrypter.update(&chunk).unwrap();
     /// }
     /// count += encrypter.finalize().unwrap();
@@ -341,20 +354,27 @@ impl Decrypt<OpenSslCrypter> for DracoonCrypto {
     fn decrypt(data: Vec<u8>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError> {
         let cipher = Cipher::aes_256_gcm();
 
-        let key = base64::decode_block(&plain_file_key.key).map_err(|_| {
+        let key = base64::decode_block(&plain_file_key.key).map_err(|e| {
+            error!("Cannot parse key from file key (invalid file key?).");
+            debug!("{:?}", e);
             DracoonCryptoError::InvalidFileKeyFormat("Cannot parse key.".to_string())
         })?;
-        let iv = base64::decode_block(&plain_file_key.iv).map_err(|_| {
+        let iv = base64::decode_block(&plain_file_key.iv).map_err(|e| {
+            error!("Cannot parse iv from file key (invalid file key?).");
+            debug!("{:?}", e);
             DracoonCryptoError::InvalidFileKeyFormat("Cannot parse iv.".to_string())
         })?;
-        let tag = base64::decode_block(&plain_file_key.tag.ok_or_else(||
-            DracoonCryptoError::InvalidFileKeyFormat("Invalid tag.".to_string()),
-        )?)?;
+        let tag = base64::decode_block(&plain_file_key.tag.ok_or_else(|| {
+            error!("Cannot parse tag from file key (invalid file key?).");
+            DracoonCryptoError::InvalidFileKeyFormat("Invalid tag.".to_string())
+        })?)?;
 
         let aad = b"";
 
-        let res = decrypt_aead(cipher, &key, Some(&iv), aad, &data, &tag)
-            .map_err(|_| DracoonCryptoError::BadData)?;
+        let res = decrypt_aead(cipher, &key, Some(&iv), aad, &data, &tag).map_err(|_| {
+            error!("Cannot decrypt data (bad data?).");
+            DracoonCryptoError::BadData
+        })?;
 
         Ok(res)
     }
@@ -416,21 +436,32 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
         let tag = plain_file_key
             .tag
             .clone()
-            .ok_or_else(|| DracoonCryptoError::InvalidFileKeyFormat(
-                "Invalid tag.".to_string(),
-            ))?;
-        let tag = base64::decode_block(&tag)
-            .map_err(|_| DracoonCryptoError::InvalidFileKeyFormat("Invalid tag.".to_string()))?;
+            .ok_or_else(|| DracoonCryptoError::InvalidFileKeyFormat("Invalid tag.".to_string()))?;
+        let tag = base64::decode_block(&tag).map_err(|e| {
+            error!("Cannot decrypt data (bad data?).");
+            debug!("{:?}", e);
+            DracoonCryptoError::InvalidFileKeyFormat("Invalid tag.".to_string())
+        })?;
 
-        let mut crypter = OpenSslCrypter::new(cipher, Mode::Decrypt, &key, Some(&iv))
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Initializing Crypter failed.".to_string()))?;
+        let mut crypter =
+            OpenSslCrypter::new(cipher, Mode::Decrypt, &key, Some(&iv)).map_err(|e| {
+                error!("Intializing Crypter failed (bad file key?).");
+                debug!("{:?}", e);
+                DracoonCryptoError::CrypterOperationFailed(
+                    "Initializing Crypter failed.".to_string(),
+                )
+            })?;
 
-        crypter
-            .aad_update(b"")
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Skipping AAD failed.".to_string()))?;
-        crypter
-            .set_tag(&tag)
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Setting tag failed.".to_string()))?;
+        crypter.aad_update(b"").map_err(|e| {
+            error!("Intializing Crypter failed (bad file key?).");
+            debug!("{:?}", e);
+            DracoonCryptoError::CrypterOperationFailed("Skipping AAD failed.".to_string())
+        })?;
+        crypter.set_tag(&tag).map_err(|e| {
+            error!("Setting tag failed (bad data?).");
+            debug!("{:?}", e);
+            DracoonCryptoError::CrypterOperationFailed("Setting tag failed.".to_string())
+        })?;
 
         Ok(Crypter {
             crypter,
@@ -444,18 +475,30 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
     fn try_new_for_encryption(buffer: &'b mut Vec<u8>) -> Result<Self, DracoonCryptoError> {
         let cipher = Cipher::aes_256_gcm();
         let plain_file_key = PlainFileKey::try_new_for_encryption()?;
-        let key = base64::decode_block(&plain_file_key.key).map_err(|_| {
+        let key = base64::decode_block(&plain_file_key.key).map_err(|e| {
+            error!("Updating buffer failed (bad data?).");
+            debug!("{:?}", e);
             DracoonCryptoError::InvalidFileKeyFormat("Cannot parse key.".to_string())
         })?;
-        let iv = base64::decode_block(&plain_file_key.iv).map_err(|_| {
+        let iv = base64::decode_block(&plain_file_key.iv).map_err(|e| {
+            error!("Updating buffer failed (bad data?).");
+            debug!("{:?}", e);
             DracoonCryptoError::InvalidFileKeyFormat("Cannot parse iv.".to_string())
         })?;
 
-        let mut crypter = OpenSslCrypter::new(cipher, Mode::Encrypt, &key, Some(&iv))
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Initializing Crypter failed.".to_string()))?;
-        crypter
-            .aad_update(b"")
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Skipping AAD failed.".to_string()))?;
+        let mut crypter =
+            OpenSslCrypter::new(cipher, Mode::Encrypt, &key, Some(&iv)).map_err(|e| {
+                error!("Intializing Crypter failed (bad file key?).");
+                debug!("{:?}", e);
+                DracoonCryptoError::CrypterOperationFailed(
+                    "Initializing Crypter failed.".to_string(),
+                )
+            })?;
+        crypter.aad_update(b"").map_err(|e| {
+            error!("Updating buffer failed (bad data?).");
+            debug!("{:?}", e);
+            DracoonCryptoError::CrypterOperationFailed("Skipping AAD failed.".to_string())
+        })?;
 
         Ok(Crypter {
             crypter,
@@ -472,28 +515,41 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
                 self.count += count;
                 Ok(count)
             }
-            Err(_) => Err(DracoonCryptoError::CrypterOperationFailed("Updating buffer failed (bad data?).".to_string())),
+            Err(e) => {
+                error!("Updating buffer failed (bad data?).");
+                debug!("{:?}", e);
+                Err(DracoonCryptoError::CrypterOperationFailed(
+                    "Updating buffer failed (bad data?).".to_string(),
+                ))
+            }
         }
     }
 
     fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError> {
-        self
-            .crypter
-            .set_tag(tag)
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Setting tag failed.".to_string()))
+        self.crypter.set_tag(tag).map_err(|e| {
+            error!("Setting tag failed (bad data?).");
+            debug!("{:?}", e);
+            DracoonCryptoError::CrypterOperationFailed("Setting tag failed.".to_string())
+        })
     }
 
     fn finalize(&mut self) -> Result<usize, DracoonCryptoError> {
         let count = self
             .crypter
             .finalize(&mut self.buffer[self.count..])
-            .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Finalizing Crypter failed.".to_string()))?;
+            .map_err(|e| {
+                error!("Finalizing Crypter failed (bad data?).");
+                debug!("{:?}", e);
+                DracoonCryptoError::CrypterOperationFailed("Finalizing Crypter failed.".to_string())
+            })?;
 
         if let Mode::Encrypt = self.mode {
             let mut buf = [0u8; 16];
-            self.crypter
-                .get_tag(&mut buf)
-                .map_err(|_| DracoonCryptoError::CrypterOperationFailed("Getting tag failed.".to_string()))?;
+            self.crypter.get_tag(&mut buf).map_err(|e| {
+                error!("Getting tag failed (bad file key?).");
+                debug!("{:?}", e);
+                DracoonCryptoError::CrypterOperationFailed("Getting tag failed.".to_string())
+            })?;
             let tag = base64::encode_block(&buf);
             self.plain_file_key.tag = Some(tag);
         };
@@ -514,7 +570,6 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
 
     use super::*;
 
@@ -689,10 +744,11 @@ mod tests {
     fn test_chunked_message_decryption() {
         let message = b"Encrypt this very long message and decrypt it in chunks";
 
-        let (enc_message, plain_file_key) = DracoonCrypto::encrypt(message.to_vec()).expect("Should not fail");
+        let (enc_message, plain_file_key) =
+            DracoonCrypto::encrypt(message.to_vec()).expect("Should not fail");
 
         let buff_len = enc_message.len() + Cipher::aes_256_gcm().block_size();
-        
+
         let mut chunks = enc_message.chunks(5);
         let mut buf = vec![0u8; buff_len];
 
@@ -721,16 +777,15 @@ mod tests {
 
         let buff_len = message.len() + Cipher::aes_256_gcm().block_size();
 
-        let mut chunk = [0u8; 5];
         let mut buf = vec![0u8; buff_len];
 
         let mut encrypter = DracoonCrypto::get_encrypter(&mut buf).expect("Should not fail");
 
-        let mut cursor = std::io::Cursor::new(&message);
-
+  
         let mut count: usize = 0;
+        let mut chunks = message.chunks(8);
 
-        while cursor.read_exact(&mut chunk).is_ok() {
+        while let Some(chunk) = chunks.next() {
             count += encrypter.update(&chunk).expect("Should not fail");
         }
 
