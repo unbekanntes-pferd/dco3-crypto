@@ -3,7 +3,7 @@
   <p align="center">
     DRACOON Crypto utils in Rust
     <br />
-    <a href="https://github.com/unbekanntes-pferd/dco3-crypto"><strong>Explore the docs »</strong></a>
+    <a href="https://docs.rs/dco3_crypto/latest/dco3_crypto"><strong>Documentation »</strong></a>
     <br />
     <a href="https://github.com/unbekanntes-pferd/dco3-crypto/issues">Report Bug</a>
   </p>
@@ -15,9 +15,14 @@
 
 Work in progress Crypto library for DRACOON based on openssl crate.
 
+**Breaking changes** are most likely at this early stage - the library is under heavy development and depends on requirements from `dco3` (currently private API wrapper for DRACOON).
+Changes will be documented in the [release notes](https://github.com/unbekanntes-pferd/dco3-crypto/releases).
+
 ### What does work?
 
 - Asymmetric encryption / decryption of file keys (RSA)
+- Keypair generation (RSA)
+- Keypair encryption / decryption (RSA)
 - Symmetric encryption / decryption of messages (AES256 GCM)
   - on the fly encryption / decryption 
   - chunked encryption / decryption
@@ -25,24 +30,25 @@ Work in progress Crypto library for DRACOON based on openssl crate.
 ### What is planned?
 
 - Refactor asymmetric encryption (split keypair generation from other operations)
-- Use other libraries like ring as alternative to openssl bindings 
+- Use other libraries like ring as alternative to openssl bindings
+- Add feature flags to cargo build
 - Add e2e tests using encryption data from other SDKs / libs and ensure compatibility in pipeline
 
 ### What is shipped?
-Using the crate binds to the latest openssl version and is compiled in vendored mode (see [openssl](https://crates.io/crates/openssl) for details). 
+Using the crate currently binds to the latest openssl version and is compiled in vendored mode (see [openssl](https://crates.io/crates/openssl) for details). 
 
 ### How to use?
 
 See [crates.io](https://crates.io/crates/dco3_crypto)
 TL;DR Add the following line to your Cargo.toml file (dependencies):
 ```toml
-dco3_crypto = "0.2.0"
+dco3_crypto = "0.3.0"
 ```
 
 ## Documentation
 
 [Documentation](https://docs.rs/dco3_crypto/latest/dco3_crypto)
-All documentation is provided via docs on [docs.rs](https://docs.rs/dco3_crypto/latest/dco3_crypto)
+All detailed documentation is provided via docs on [docs.rs](https://docs.rs/dco3_crypto/latest/dco3_crypto)
 
 ## TL; DR usage
 
@@ -59,11 +65,6 @@ In order to
 - encrypt a file key with a public key (user keypair)
 - decrypt a file key with a private key (user keypair)
 
-import `DracoonCrypto` and `DracoonRSACrypto`:
-
-```rust
-use dco3_crypto::{DracoonCrypto, DracoonRSACrypto};
-```
 
 Generate a plain user keypair:
 
@@ -197,7 +198,7 @@ use openssl::symm::Cipher;
 let message = b"Encrypt this very long message in chunks and decrypt it";
     
 let (message, plain_file_key) = DracoonCrypto::encrypt(message.to_vec()).unwrap();
-let buff_len = message.len() + Cipher::aes_256_gcm().block_size();
+let buff_len = message.len() + 1;
     
 let mut chunks = message.chunks(5);
 let mut buf = vec![0u8; buff_len];
