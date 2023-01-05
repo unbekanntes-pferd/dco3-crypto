@@ -32,6 +32,85 @@ pub use models::*;
 ///
 pub struct DracoonCrypto;
 
+impl Encrypter<OpenSslCrypter> for DracoonCrypto {
+    /// Returns a Crypter for chunked encryption
+    ///
+    /// Accepts a buffer to store the encrypted message to.
+    /// In order to encrypt in chunks, you need to
+    /// - get an encrypter and pass a buffer
+    /// - update the encrypter by passing the chunks
+    /// - finalize the encryption once all chunks were read
+    /// - get the message (as bytes) from the encrypter
+    /// - get the plain file key from the encrypter
+    ///
+    /// # Example
+    /// ```
+    /// use dco3_crypto::{DracoonCrypto, Encrypter, ChunkedEncryption};
+    /// use openssl::symm::Cipher;
+    ///
+    /// let mut message = b"Encrypt this very long message in chunks and decrypt it";
+    /// let buff_len = message.len() + Cipher::aes_256_gcm().block_size();
+    /// let mut buf = vec![0u8; buff_len];
+    /// let mut encrypter =
+    /// DracoonCrypto::encrypter(&mut buf).unwrap();
+    /// let mut count: usize = 0;
+    /// const CHUNKSIZE: usize = 8;
+    /// let mut chunks = message.chunks(CHUNKSIZE);
+    /// while let Some(chunk) = chunks.next() {
+    /// count += encrypter.update(&chunk).unwrap();
+    /// }
+    /// count += encrypter.finalize().unwrap();
+    ///
+    /// let enc_message = encrypter.get_message();
+    /// let plain_file_key = encrypter.get_plain_file_key();
+    ///
+    /// ```
+    fn encrypter(buffer: &mut Vec<u8>) -> Result<Crypter<OpenSslCrypter>, DracoonCryptoError> {
+        Crypter::try_new_for_encryption(buffer)
+    }
+}
+
+impl Decrypter<OpenSslCrypter> for DracoonCrypto {
+    /// Returns a Crypter for chunked decryption
+    ///
+    /// Accepts a buffer to store the decrypted message to.
+    /// In order to decrypt in chunks, you need to
+    /// - get a decrypter and pass a buffer and the plain file key
+    /// - update the decrypter by passing the chunks
+    /// - finalize the decryption once all chunks were read
+    /// - get the message (as bytes) from the encrypter
+    ///
+    /// # Example
+    /// ```
+    /// use dco3_crypto::{DracoonCrypto, Encrypt, Decrypter, ChunkedEncryption};
+    /// use openssl::symm::Cipher;
+    /// let message = b"Encrypt this very long message in chunks and decrypt it";
+    ///
+    /// /// returns a tuple containing the message and the plain file key
+    /// let (message, plain_file_key) = DracoonCrypto::encrypt(message.to_vec()).unwrap();
+    /// let buff_len = message.len() + Cipher::aes_256_gcm().block_size();
+    ///
+    /// /// chunks of 5
+    /// let mut chunks = message.chunks(5);
+    /// let mut buf = vec![0u8; buff_len];
+    /// let mut decrypter = DracoonCrypto::decrypter(plain_file_key, &mut buf).unwrap();
+    /// let mut count: usize = 0;
+    /// while let Some(chunk) = chunks.next() {
+    ///    count += decrypter.update(&chunk).unwrap();
+    ///}
+    /// count += decrypter.finalize().unwrap();
+    ///
+    /// let plain_message = std::str::from_utf8(decrypter.get_message()).unwrap();
+    /// ```
+    ///
+    fn decrypter(
+        plain_file_key: PlainFileKey,
+        buffer: &mut Vec<u8>,
+    ) -> Result<models::Crypter<OpenSslCrypter>, DracoonCryptoError> {
+        Crypter::try_new_for_decryption(plain_file_key, buffer)
+    }
+}
+
 impl DracoonRSACrypto for DracoonCrypto {
     /// Creates a plain RSA keypair required for DRACOON to encrypt
     /// and decrypt file keys.
@@ -266,7 +345,7 @@ impl DracoonRSACrypto for DracoonCrypto {
 /// Implements encryption based on AES256 GCM.
 /// Provides function to encrypt on the fly and another one to create a Crypter in order
 /// to encrypt in chunks.
-impl Encrypt<OpenSslCrypter> for DracoonCrypto {
+impl Encrypt for DracoonCrypto {
     /// Encrypts bytes on the fly - full message is expected and passed as data.
     ///
     /// # Example
@@ -276,7 +355,7 @@ impl Encrypt<OpenSslCrypter> for DracoonCrypto {
     /// let enc_message = DracoonCrypto::encrypt(message.to_vec()).unwrap();
     ///
     /// ```
-    fn encrypt(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError> {
+    fn encrypt(data: impl AsRef<[u8]>) -> Result<EncryptionResult, DracoonCryptoError> {
         let cipher = Cipher::aes_256_gcm();
 
         let mut plain_file_key = PlainFileKey::try_new_for_encryption()?;
@@ -291,7 +370,7 @@ impl Encrypt<OpenSslCrypter> for DracoonCrypto {
         let aad = b"";
         let mut tag = [0; 16];
 
-        let res = encrypt_aead(cipher, &key, Some(&iv), aad, &data, &mut tag)
+        let res = encrypt_aead(cipher, &key, Some(&iv), aad, data.as_ref(), &mut tag)
             .map_err(|_| DracoonCryptoError::BadData)?;
 
         let tag = base64::encode_block(&tag);
@@ -299,59 +378,23 @@ impl Encrypt<OpenSslCrypter> for DracoonCrypto {
 
         Ok((res, plain_file_key))
     }
-    /// Returns a Crypter for chunked encryption
-    ///
-    /// Accepts a buffer to store the encrypted message to.
-    /// In order to encrypt in chunks, you need to
-    /// - get an encrypter and pass a buffer
-    /// - update the encrypter by passing the chunks
-    /// - finalize the encryption once all chunks were read
-    /// - get the message (as bytes) from the encrypter
-    /// - get the plain file key from the encrypter
-    ///
-    /// # Example
-    /// ```
-    /// use dco3_crypto::{DracoonCrypto, Encrypt, ChunkedEncryption};
-    /// use openssl::symm::Cipher;
-    /// use std::io::Read;
-    ///
-    /// let mut message = b"Encrypt this very long message in chunks and decrypt it";
-    /// let buff_len = message.len() + Cipher::aes_256_gcm().block_size();
-    /// let mut buf = vec![0u8; buff_len];
-    /// let mut encrypter =
-    /// DracoonCrypto::get_encrypter(&mut buf).unwrap();
-    /// let mut count: usize = 0;
-    /// const CHUNKSIZE: usize = 8;
-    /// let mut chunks = message.chunks(CHUNKSIZE);
-    /// while let Some(chunk) = chunks.next() {
-    /// count += encrypter.update(&chunk).unwrap();
-    /// }
-    /// count += encrypter.finalize().unwrap();
-    ///
-    /// let enc_message = encrypter.get_message();
-    /// let plain_file_key = encrypter.get_plain_file_key();
-    ///
-    /// ```
-    fn get_encrypter(buffer: &mut Vec<u8>) -> Result<Crypter<OpenSslCrypter>, DracoonCryptoError> {
-        Crypter::try_new_for_encryption(buffer)
-    }
 }
 
 /// Implements decryption based on AES256 GCM.
 /// Provides function to decrypt on the fly and another one to create a Crypter in order
 /// to decrypt in chunks.
-impl Decrypt<OpenSslCrypter> for DracoonCrypto {
+impl Decrypt for DracoonCrypto {
     /// Decrypts bytes on the fly - full message is expected and passed as data.
     ///
     /// # Example
     /// ```
     /// use dco3_crypto::{DracoonCrypto, Decrypt, Encrypt};
     /// let message = b"Encrypt me please";
-    /// let enc_message = DracoonCrypto::encrypt(message.to_vec()).unwrap();
-    /// let plain_message = DracoonCrypto::decrypt(enc_message.0, enc_message.1);
+    /// let (enc_message, plain_file_key) = DracoonCrypto::encrypt(message.to_vec()).unwrap();
+    /// let plain_message = DracoonCrypto::decrypt(&enc_message, plain_file_key);
     ///
     /// ```
-    fn decrypt(data: Vec<u8>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError> {
+    fn decrypt(data: &impl AsRef<[u8]>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError> {
         let cipher = Cipher::aes_256_gcm();
 
         let key = base64::decode_block(&plain_file_key.key).map_err(|e| {
@@ -371,53 +414,12 @@ impl Decrypt<OpenSslCrypter> for DracoonCrypto {
 
         let aad = b"";
 
-        let res = decrypt_aead(cipher, &key, Some(&iv), aad, &data, &tag).map_err(|_| {
+        let res = decrypt_aead(cipher, &key, Some(&iv), aad, data.as_ref(), &tag).map_err(|_| {
             error!("Cannot decrypt data (bad data?).");
             DracoonCryptoError::BadData
         })?;
 
         Ok(res)
-    }
-
-    /// Returns a Crypter for chunked decryption
-    ///
-    /// Accepts a buffer to store the decrypted message to.
-    /// In order to decrypt in chunks, you need to
-    /// - get a decrypter and pass a buffer and the plain file key
-    /// - update the decrypter by passing the chunks
-    /// - finalize the decryption once all chunks were read
-    /// - get the message (as bytes) from the encrypter
-    ///
-    /// # Example
-    /// ```
-    /// use dco3_crypto::{DracoonCrypto, Encrypt, Decrypt, ChunkedEncryption};
-    /// use openssl::symm::Cipher;
-    /// use std::io::Read;
-    /// let message = b"Encrypt this very long message in chunks and decrypt it";
-    ///
-    /// /// returns a tuple containing the message and the plain file key
-    /// let message = DracoonCrypto::encrypt(message.to_vec()).unwrap();
-    /// let buff_len = message.0.len() + Cipher::aes_256_gcm().block_size();
-    ///
-    /// /// chunks of 5
-    /// let mut chunk = [0u8; 5];
-    /// let mut buf = vec![0u8; buff_len];
-    /// let mut decrypter = DracoonCrypto::get_decrypter(message.1, &mut buf).unwrap();
-    /// let mut count: usize = 0;
-    /// let mut cursor = std::io::Cursor::new(&message.0);
-    /// while cursor.read_exact(&mut chunk).is_ok() {
-    ///    count += decrypter.update(&chunk).unwrap();
-    ///}
-    /// count += decrypter.finalize().unwrap();
-    ///
-    /// let plain_message = std::str::from_utf8(decrypter.get_message()).unwrap();
-    /// ```
-    ///
-    fn get_decrypter(
-        plain_file_key: PlainFileKey,
-        buffer: &mut Vec<u8>,
-    ) -> Result<models::Crypter<OpenSslCrypter>, DracoonCryptoError> {
-        Crypter::try_new_for_decryption(plain_file_key, buffer)
     }
 }
 
@@ -737,7 +739,7 @@ mod tests {
         assert!(enc_message.1.tag != None);
 
         let plain_message =
-            DracoonCrypto::decrypt(enc_message.0, enc_message.1).expect("Should not fail");
+            DracoonCrypto::decrypt(&enc_message.0, enc_message.1).expect("Should not fail");
         assert_eq!(b"Encrypt me please".to_vec(), plain_message);
     }
     #[test]
@@ -753,7 +755,7 @@ mod tests {
         let mut buf = vec![0u8; buff_len];
 
         let mut decrypter =
-            DracoonCrypto::get_decrypter(plain_file_key, &mut buf).expect("Should not fail");
+            DracoonCrypto::decrypter(plain_file_key, &mut buf).expect("Should not fail");
         let mut count: usize = 0;
 
         while let Some(chunk) = chunks.next() {
@@ -779,7 +781,7 @@ mod tests {
 
         let mut buf = vec![0u8; buff_len];
 
-        let mut encrypter = DracoonCrypto::get_encrypter(&mut buf).expect("Should not fail");
+        let mut encrypter = DracoonCrypto::encrypter(&mut buf).expect("Should not fail");
 
   
         let mut count: usize = 0;
@@ -796,7 +798,7 @@ mod tests {
         let enc_message = encrypter.get_message().to_vec();
         let plain_file_key = encrypter.get_plain_file_key();
         let plain_message =
-            DracoonCrypto::decrypt(enc_message, plain_file_key).expect("Should not fail");
+            DracoonCrypto::decrypt(&enc_message, plain_file_key).expect("Should not fail");
 
         assert_eq!(
             plain_message,

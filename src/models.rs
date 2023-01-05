@@ -330,20 +330,17 @@ pub trait DracoonRSACrypto {
 /// Trait representing necessary functions for symmetric encryption
 /// - encrypt on the fly
 /// - return an encrypter for chunked encryption
-pub trait Encrypt<C> {
-    fn encrypt(data: Vec<u8>) -> Result<EncryptionResult, DracoonCryptoError>;
-
-    fn get_encrypter(buffer: &mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+pub trait Encrypt {
+    fn encrypt(data: impl AsRef<[u8]>) -> Result<EncryptionResult, DracoonCryptoError>;
 }
 
 /// Trait representing necessary functions for symmetric decryption
 /// - decrypt on the fly
 /// - return a decrypter for chunked decryption
-pub trait Decrypt<C> {
-    fn decrypt(data: Vec<u8>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError>;
-
-    fn get_decrypter(plain_file_key: PlainFileKey, buffer: &mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+pub trait Decrypt {
+    fn decrypt(data: &impl AsRef<[u8]>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError>;
 }
+
 
 /// Allows chunked en- and decryption.
 /// Holds a reference to a buffer to store the mssage, processed bytes as count and 
@@ -360,22 +357,41 @@ pub struct Crypter <'b, C> {
     pub mode: Mode
 }
 
+/// Represents methods to return an enrypter over a generic internal C
+/// See usage of Crypter and relevant chunked encryption for Crypter<OpenSslCrypter)
+pub trait Encrypter<C> {
+    /// Returns an encrypter by passing a mutable buffer to write the encrypted message to
+    fn encrypter(buffer: &mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+
+}
+
+/// Represents methods to return a decrypter over a generic internal C
+/// See usage of Crypter and relevant chunked encryption for Crypter<OpenSslCrypter)
+pub trait Decrypter<C> {
+    /// Returns a decrypter by passing the plain file key used for the file
+    /// and a mutable buffer to write the plain message to
+    fn decrypter(
+        plain_file_key: PlainFileKey,
+        buffer: &mut Vec<u8>,
+    ) -> Result<Crypter<C>, DracoonCryptoError>;
+}
+
 /// Represents all functions required for a Crypter to perform chunked encryption / decryption
 pub trait ChunkedEncryption<'b, C> {
-    /// Returns a Crypter for decryption by passing the plain file key and a writable (mutable) buffer
-    fn try_new_for_decryption(plain_file_key: PlainFileKey, buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
-    /// Returns a Crypter for enryption by passing a writable (mutable) buffer
-    fn try_new_for_encryption(buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
-    /// Update the Crypter with given data
-    fn update(&mut self, data: &[u8]) -> Result<usize, DracoonCryptoError>;
-    /// Set the tag before finalizing the encryption
-    fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError>;
     /// Finalize decryption / encryption
     fn finalize(&mut self) -> Result<usize, DracoonCryptoError>;
     /// Get the message (result of encryption / decryption) from buffer
     fn get_message(&mut self) -> &Vec<u8>;
     /// Get the plain file key used for either encryption or decryption
     fn get_plain_file_key(self) -> PlainFileKey;
+    /// Set the tag before finalizing the encryption
+    fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError>;
+    /// Returns a Crypter for decryption by passing the plain file key and a writable (mutable) buffer
+    fn try_new_for_decryption(plain_file_key: PlainFileKey, buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+    /// Returns a Crypter for enryption by passing a writable (mutable) buffer
+    fn try_new_for_encryption(buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+    /// Update the Crypter with given data
+    fn update(&mut self, data: &[u8]) -> Result<usize, DracoonCryptoError>;
 
 }
 
