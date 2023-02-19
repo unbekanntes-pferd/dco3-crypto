@@ -2,8 +2,8 @@
 use openssl::base64;
 use openssl::error::ErrorStack;
 use openssl::rand::rand_bytes;
-use openssl::symm::{Mode};
-use serde::{Serialize, Deserialize};
+use openssl::symm::Mode;
+use serde::{Deserialize, Serialize};
 use std::str::Utf8Error;
 
 /// Represents the version of the encrypted file key
@@ -17,7 +17,7 @@ pub enum FileKeyVersion {
     RSA4096_AES256GCM,
 }
 
-/// Represents the used cipher for the plain file key used 
+/// Represents the used cipher for the plain file key used
 /// for symmetric encryption / decryption
 /// Only AES256 GCM is currently used
 #[derive(Serialize, Deserialize)]
@@ -26,7 +26,7 @@ pub enum PlainFileKeyVersion {
     AES256CM,
 }
 
-/// Represents the user keypair version 
+/// Represents the user keypair version
 /// Standard is 4096 bit (2048 bit for compatibility only)
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum UserKeyPairVersion {
@@ -142,7 +142,7 @@ impl PlainUserKeyPairContainer {
             public_key_container,
         }
     }
-    
+
     /// Create a new plain user keypair container without private key encryption
     /// Accepts existing encrypted keypair and a plain private key PEM
     pub fn new_from_keypair(
@@ -194,7 +194,7 @@ impl FileKey {
 impl PlainFileKey {
     /// Create a plain file key used for symmetric encryption / decryption (AES256 GCM)
     /// Accepts the encrypted file key and the plain file key (base64 encoded)
-    /// Returns the plain file key 
+    /// Returns the plain file key
     pub fn new_from_file_key(enc_file_key: FileKey, plain_file_key: &str) -> Self {
         Self {
             key: plain_file_key.to_string(),
@@ -282,7 +282,7 @@ pub trait PublicKey {
     fn get_public_key(&self) -> &PublicKeyContainer;
 }
 
-/// Returns only the public key container as reference of a plain 
+/// Returns only the public key container as reference of a plain
 /// user keypair container
 impl PublicKey for PlainUserKeyPairContainer {
     fn get_public_key(&self) -> &PublicKeyContainer {
@@ -305,6 +305,11 @@ pub trait DracoonRSACrypto {
     fn create_plain_user_keypair(
         version: UserKeyPairVersion,
     ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
+
+    fn encrypt_private_key_only(
+        secret: &str,
+        plain_private_key: PrivateKeyContainer,
+    ) -> Result<PrivateKeyContainer, DracoonCryptoError>;
 
     fn encrypt_private_key(
         secret: &str,
@@ -338,23 +343,25 @@ pub trait Encrypt {
 /// - decrypt on the fly
 /// - return a decrypter for chunked decryption
 pub trait Decrypt {
-    fn decrypt(data: &impl AsRef<[u8]>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError>;
+    fn decrypt(
+        data: &impl AsRef<[u8]>,
+        plain_file_key: PlainFileKey,
+    ) -> Result<Vec<u8>, DracoonCryptoError>;
 }
 
-
 /// Allows chunked en- and decryption.
-/// Holds a reference to a buffer to store the mssage, processed bytes as count and 
+/// Holds a reference to a buffer to store the mssage, processed bytes as count and
 /// the used plain file key and mode.
 /// Requires generic type annotation
-/// The type 'C' represents an internal handler for the encryption functions with chunking 
-pub struct Crypter <'b, C> {
+/// The type 'C' represents an internal handler for the encryption functions with chunking
+pub struct Crypter<'b, C> {
     // this is a generic type representing the internal handler for chunked encryption
     // example implementation see lib.rs for openssl Crypter
     pub crypter: C,
     pub buffer: &'b mut Vec<u8>,
     pub count: usize,
     pub plain_file_key: PlainFileKey,
-    pub mode: Mode
+    pub mode: Mode,
 }
 
 /// Represents methods to return an enrypter over a generic internal C
@@ -362,7 +369,6 @@ pub struct Crypter <'b, C> {
 pub trait Encrypter<C> {
     /// Returns an encrypter by passing a mutable buffer to write the encrypted message to
     fn encrypter(buffer: &mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
-
 }
 
 /// Represents methods to return a decrypter over a generic internal C
@@ -387,11 +393,12 @@ pub trait ChunkedEncryption<'b, C> {
     /// Set the tag before finalizing the encryption
     fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError>;
     /// Returns a Crypter for decryption by passing the plain file key and a writable (mutable) buffer
-    fn try_new_for_decryption(plain_file_key: PlainFileKey, buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
+    fn try_new_for_decryption(
+        plain_file_key: PlainFileKey,
+        buffer: &'b mut Vec<u8>,
+    ) -> Result<Crypter<C>, DracoonCryptoError>;
     /// Returns a Crypter for enryption by passing a writable (mutable) buffer
     fn try_new_for_encryption(buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
     /// Update the Crypter with given data
     fn update(&mut self, data: &[u8]) -> Result<usize, DracoonCryptoError>;
-
 }
-
