@@ -1,4 +1,4 @@
-  <h3 align="center">dco3-crypto</h3>
+  <h1 align="center">dco3-crypto</h1>
 
   <p align="center">
     DRACOON Crypto utils in Rust
@@ -62,6 +62,7 @@ Therefore, the minimum required import is *always* `DracoonCrypto` and the relev
 In order to 
 - generate a (plain) user keypair 
 - en/decrypt a user keypair
+- encrypt a private only
 - encrypt a file key with a public key (user keypair)
 - decrypt a file key with a private key (user keypair)
 
@@ -85,6 +86,17 @@ use dco3_crypto::{DracoonCrypto, DracoonRSACrypto, UserKeypairVersion};
 let new_keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
 let secret ="VerySecret123!";
 let enc_keypair = DracoonCrypto::encrypt_private_key(secret, new_keypair).unwrap();
+
+```
+
+Encrypt a private key only:
+
+```rust
+use dco3_crypto::{DracoonCrypto, DracoonRSACrypto, UserKeypairVersion};
+
+let new_keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
+let secret ="VerySecret123!";
+let enc_private_key = DracoonCrypto::encrypt_private_key_only(secret, new_keypair.private_key_container).unwrap();
 
 ```
 
