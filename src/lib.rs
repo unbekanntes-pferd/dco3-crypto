@@ -186,34 +186,6 @@ impl DracoonRSACrypto for DracoonCrypto {
             private_key_pem,
         ))
     }
-    /// Encrypts a private key container - specifically required for public shares - using
-    /// a secret provided as parameter.
-    /// # Example
-    /// ```
-    /// use dco3_crypto::{DracoonCrypto, DracoonRSACrypto, UserKeyPairVersion};
-    /// let secret = "VerySecret123!";
-    /// let plain_4096_keypair =
-    /// DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
-    /// let enc_4096_private_key = DracoonCrypto::encrypt_private_key_only(secret, plain_4096_keypair.private_key_container).unwrap();
-    /// ```
-    ///
-    fn encrypt_private_key_only(
-            secret: &str,
-            plain_private_key: PrivateKeyContainer,
-        ) -> Result<PrivateKeyContainer, DracoonCryptoError> {
-            let secret = secret.as_bytes();
-            let private_key_pem = plain_private_key.private_key.as_bytes();
-
-            let rsa = Rsa::private_key_from_pem(private_key_pem)?;
-            let rsa = PKey::from_rsa(rsa)?;
-
-            let private_key_pem =
-                rsa.private_key_to_pem_pkcs8_passphrase(Cipher::aes_256_cbc(), secret)?;
-            let private_key_pem = std::str::from_utf8(&private_key_pem)?;
-
-            Ok(PrivateKeyContainer::new(private_key_pem.to_string(), plain_private_key.version))
-
-    }
     /// Decrypts an encrypted keypair container - specifically the private key - using
     /// a secret provided as parameter.
     /// # Example
@@ -252,6 +224,37 @@ impl DracoonRSACrypto for DracoonCrypto {
             &private_key_pem,
         ))
     }
+
+    /// Decrypts a private key container - specifically required for public shares - using
+    /// a secret provided as parameter.
+    /// # Example
+    /// ```
+    /// use dco3_crypto::{DracoonCrypto, DracoonRSACrypto, UserKeyPairVersion};
+    /// let secret = "VerySecret123!";
+    /// let plain_4096_keypair =
+    /// DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
+    /// let enc_4096_keypair = DracoonCrypto::encrypt_private_key(secret, plain_4096_keypair).unwrap();
+    /// let plain_private_key = DracoonCrypto::decrypt_private_key_only(secret, enc_4096_keypair.private_key_container).unwrap();
+    /// ```
+    ///
+    fn decrypt_private_key_only(
+        secret: &str,
+        plain_private_key: PrivateKeyContainer,
+    ) -> Result<PrivateKeyContainer, DracoonCryptoError> {
+        let secret = secret.as_bytes();
+        let private_key_pem = plain_private_key.private_key.as_bytes();
+
+        let rsa = PKey::private_key_from_pem_passphrase(private_key_pem, secret)?;
+        let rsa = rsa.rsa()?;
+        let private_key_pem = rsa
+            .private_key_to_pem()
+            .iter()
+            .flat_map(|buf| std::str::from_utf8(buf))
+            .collect::<String>();
+
+        Ok(PrivateKeyContainer::new(private_key_pem, plain_private_key.version))
+
+}
     /// Encrypts a file key used for file encryption using either the public key or a plain keypair
     /// container.
     /// # Example

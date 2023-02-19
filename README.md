@@ -42,7 +42,7 @@ Using the crate currently binds to the latest openssl version and is compiled in
 See [crates.io](https://crates.io/crates/dco3_crypto)
 TL;DR Add the following line to your Cargo.toml file (dependencies):
 ```toml
-dco3_crypto = "0.4.0"
+dco3_crypto = "0.4.1"
 ```
 
 ## Documentation
@@ -62,7 +62,7 @@ Therefore, the minimum required import is *always* `DracoonCrypto` and the relev
 In order to 
 - generate a (plain) user keypair 
 - en/decrypt a user keypair
-- encrypt a private only
+- decrypt a private only
 - encrypt a file key with a public key (user keypair)
 - decrypt a file key with a private key (user keypair)
 
@@ -89,14 +89,15 @@ let enc_keypair = DracoonCrypto::encrypt_private_key(secret, new_keypair).unwrap
 
 ```
 
-Encrypt a private key only:
+Decrypt a private key only (for public share use):
 
 ```rust
 use dco3_crypto::{DracoonCrypto, DracoonRSACrypto, UserKeypairVersion};
 
 let new_keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
 let secret ="VerySecret123!";
-let enc_private_key = DracoonCrypto::encrypt_private_key_only(secret, new_keypair.private_key_container).unwrap();
+let enc_keypair = DracoonCrypto::encrypt_private_key(secret, new_keypair).unwrap();
+let plain_private_key = DracoonCrypto::decrypt_private_key_only(secret, enc_keypair.private_key_container).unwrap();
 
 ```
 
