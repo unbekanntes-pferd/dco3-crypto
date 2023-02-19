@@ -42,7 +42,7 @@ Using the crate currently binds to the latest openssl version and is compiled in
 See [crates.io](https://crates.io/crates/dco3_crypto)
 TL;DR Add the following line to your Cargo.toml file (dependencies):
 ```toml
-dco3_crypto = "0.3.0"
+dco3_crypto = "0.4.0"
 ```
 
 ## Documentation
