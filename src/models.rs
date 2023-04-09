@@ -9,7 +9,7 @@ use std::str::Utf8Error;
 /// Represents the version of the encrypted file key
 /// Indicates which asymmetric keypair version is required
 /// Standard is 4096 bit (2048 bit for compatibility only)
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum FileKeyVersion {
     #[serde(rename = "A")]
     RSA2048_AES256GCM,
@@ -20,7 +20,7 @@ pub enum FileKeyVersion {
 /// Represents the used cipher for the plain file key used
 /// for symmetric encryption / decryption
 /// Only AES256 GCM is currently used
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum PlainFileKeyVersion {
     #[serde(rename = "AES-256-GCM")]
     AES256CM,
@@ -40,7 +40,7 @@ pub enum UserKeyPairVersion {
 /// Contains key, iv and tag used for decryption
 /// key, iv, and tag are base64 encoded bytes
 /// The key is additonally encrypted with public keypair encryption
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct FileKey {
     pub key: String,
     pub iv: String,
@@ -52,7 +52,7 @@ pub struct FileKey {
 /// Contains key, iv and tag used for decryption
 /// key, iv, and tag are base64 encoded bytes
 /// key is the plain base64 encoded random bytes used
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct PlainFileKey {
     pub key: String,
     pub iv: String,
@@ -61,7 +61,7 @@ pub struct PlainFileKey {
 }
 
 /// Container holding only the public key used for file key encryption
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyContainer {
     pub version: UserKeyPairVersion,
@@ -72,7 +72,7 @@ pub struct PublicKeyContainer {
 }
 
 /// Container holding only the private key used for file key decryption
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateKeyContainer {
     pub version: UserKeyPairVersion,
@@ -84,7 +84,7 @@ pub struct PrivateKeyContainer {
 
 /// Asymmetric user keypair container
 /// The private key is protected via secret and needs to be decrypted for usage
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct UserKeyPairContainer {
     pub private_key_container: PrivateKeyContainer,
@@ -93,7 +93,7 @@ pub struct UserKeyPairContainer {
 
 /// Asymmetric plain user keypair container
 /// The private key is in plain and can be used for decryption
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PlainUserKeyPairContainer {
     pub private_key_container: PrivateKeyContainer,
@@ -230,7 +230,7 @@ impl PlainFileKey {
 }
 
 /// Possible states of rescue keys in a room
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub enum KeyState {
     #[serde(rename = "none")]
     None,
@@ -241,7 +241,7 @@ pub enum KeyState {
 }
 
 /// Represents the state of the rescue keys in a room
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct EncryptionInfo {
     user_key_state: KeyState,
     room_key_state: KeyState,
@@ -350,12 +350,15 @@ pub trait Decrypt {
     ) -> Result<Vec<u8>, DracoonCryptoError>;
 }
 
+pub struct Open;
+pub struct Finalized;
+
 /// Allows chunked en- and decryption.
 /// Holds a reference to a buffer to store the mssage, processed bytes as count and
 /// the used plain file key and mode.
 /// Requires generic type annotation
 /// The type 'C' represents an internal handler for the encryption functions with chunking
-pub struct Crypter<'b, C> {
+pub struct Crypter<'b, C, State = Open> {
     // this is a generic type representing the internal handler for chunked encryption
     // example implementation see lib.rs for openssl Crypter
     pub crypter: C,
@@ -363,6 +366,7 @@ pub struct Crypter<'b, C> {
     pub count: usize,
     pub plain_file_key: PlainFileKey,
     pub mode: Mode,
+    pub state: std::marker::PhantomData<State>
 }
 
 /// Represents methods to return an enrypter over a generic internal C

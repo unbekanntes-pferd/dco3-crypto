@@ -502,6 +502,7 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
             count: 0,
             plain_file_key,
             mode: Mode::Decrypt,
+            state: std::marker::PhantomData::<Open>
         })
     }
 
@@ -539,6 +540,7 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
             count: 0,
             plain_file_key,
             mode: Mode::Encrypt,
+            state: std::marker::PhantomData::<Open>
         })
     }
 
