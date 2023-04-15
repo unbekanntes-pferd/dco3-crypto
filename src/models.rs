@@ -61,7 +61,7 @@ pub struct PlainFileKey {
 }
 
 /// Container holding only the public key used for file key encryption
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyContainer {
     pub version: UserKeyPairVersion,
@@ -72,7 +72,7 @@ pub struct PublicKeyContainer {
 }
 
 /// Container holding only the private key used for file key decryption
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateKeyContainer {
     pub version: UserKeyPairVersion,
@@ -84,7 +84,7 @@ pub struct PrivateKeyContainer {
 
 /// Asymmetric user keypair container
 /// The private key is protected via secret and needs to be decrypted for usage
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UserKeyPairContainer {
     pub private_key_container: PrivateKeyContainer,
