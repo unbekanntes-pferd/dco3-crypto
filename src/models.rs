@@ -93,7 +93,7 @@ pub struct UserKeyPairContainer {
 
 /// Asymmetric plain user keypair container
 /// The private key is in plain and can be used for decryption
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PlainUserKeyPairContainer {
     pub private_key_container: PrivateKeyContainer,
