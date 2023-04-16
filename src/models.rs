@@ -319,7 +319,7 @@ pub trait DracoonRSACrypto {
 
     fn decrypt_private_key_only(
         secret: &str,
-        plain_private_key: PrivateKeyContainer,
+        plain_private_key: &PrivateKeyContainer,
     ) -> Result<PrivateKeyContainer, DracoonCryptoError>;
 
     fn encrypt_file_key(
@@ -329,7 +329,7 @@ pub trait DracoonRSACrypto {
 
     fn decrypt_file_key(
         file_key: FileKey,
-        keypair: PlainUserKeyPairContainer,
+        keypair: &PlainUserKeyPairContainer,
     ) -> Result<PlainFileKey, DracoonCryptoError>;
 }
 
