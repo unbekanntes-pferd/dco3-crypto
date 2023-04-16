@@ -68,7 +68,7 @@ pub struct PublicKeyContainer {
     pub public_key: String,
     pub created_at: Option<String>,
     pub expire_at: Option<String>,
-    pub created_by: Option<String>,
+    pub created_by: Option<u64>,
 }
 
 /// Container holding only the private key used for file key decryption
@@ -79,7 +79,7 @@ pub struct PrivateKeyContainer {
     pub private_key: String,
     pub created_at: Option<String>,
     pub expire_at: Option<String>,
-    pub created_by: Option<String>,
+    pub created_by: Option<u64>,
 }
 
 /// Asymmetric user keypair container
