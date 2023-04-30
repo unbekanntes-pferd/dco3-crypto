@@ -20,7 +20,7 @@ pub enum FileKeyVersion {
 /// Represents the used cipher for the plain file key used
 /// for symmetric encryption / decryption
 /// Only AES256 GCM is currently used
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum PlainFileKeyVersion {
     #[serde(rename = "AES-256-GCM")]
     AES256CM,
@@ -52,7 +52,7 @@ pub struct FileKey {
 /// Contains key, iv and tag used for decryption
 /// key, iv, and tag are base64 encoded bytes
 /// key is the plain base64 encoded random bytes used
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlainFileKey {
     pub key: String,
     pub iv: String,
@@ -394,7 +394,7 @@ pub trait ChunkedEncryption<'b, C> {
     /// Get the message (result of encryption / decryption) from buffer
     fn get_message(&mut self) -> &Vec<u8>;
     /// Get the plain file key used for either encryption or decryption
-    fn get_plain_file_key(self) -> PlainFileKey;
+    fn get_plain_file_key(&self) -> PlainFileKey;
     /// Set the tag before finalizing the encryption
     fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError>;
     /// Returns a Crypter for decryption by passing the plain file key and a writable (mutable) buffer

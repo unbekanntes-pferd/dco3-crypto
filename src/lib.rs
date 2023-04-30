@@ -598,8 +598,8 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
         self.buffer
     }
 
-    fn get_plain_file_key(self) -> PlainFileKey {
-        self.plain_file_key
+    fn get_plain_file_key(&self) -> PlainFileKey {
+        self.plain_file_key.clone()
     }
 }
 
