@@ -234,15 +234,15 @@ impl DracoonRSACrypto for DracoonCrypto {
     /// let plain_4096_keypair =
     /// DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
     /// let enc_4096_keypair = DracoonCrypto::encrypt_private_key(secret, plain_4096_keypair).unwrap();
-    /// let plain_private_key = DracoonCrypto::decrypt_private_key_only(secret, enc_4096_keypair.private_key_container).unwrap();
+    /// let plain_private_key = DracoonCrypto::decrypt_private_key_only(secret, &enc_4096_keypair.private_key_container).unwrap();
     /// ```
     ///
     fn decrypt_private_key_only(
         secret: &str,
-        plain_private_key: PrivateKeyContainer,
+        private_key: &PrivateKeyContainer,
     ) -> Result<PrivateKeyContainer, DracoonCryptoError> {
         let secret = secret.as_bytes();
-        let private_key_pem = plain_private_key.private_key.as_bytes();
+        let private_key_pem = private_key.private_key.as_bytes();
 
         let rsa = PKey::private_key_from_pem_passphrase(private_key_pem, secret)?;
         let rsa = rsa.rsa()?;
@@ -252,7 +252,7 @@ impl DracoonRSACrypto for DracoonCrypto {
             .flat_map(|buf| std::str::from_utf8(buf))
             .collect::<String>();
 
-        Ok(PrivateKeyContainer::new(private_key_pem, plain_private_key.version))
+        Ok(PrivateKeyContainer::new(private_key_pem, private_key.version.clone()))
 
 }
     /// Encrypts a file key used for file encryption using either the public key or a plain keypair
@@ -333,13 +333,13 @@ impl DracoonRSACrypto for DracoonCrypto {
     /// let plain_file_key = PlainFileKey::try_new_for_encryption().unwrap();
     /// let enc_file_key = DracoonCrypto::encrypt_file_key(plain_file_key, public_key_container).unwrap();
 
-    /// let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_4096_keypair).unwrap();
+    /// let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, &plain_4096_keypair).unwrap();
     ///
     /// ```
     ///
     fn decrypt_file_key(
         file_key: FileKey,
-        keypair: PlainUserKeyPairContainer,
+        keypair: &PlainUserKeyPairContainer,
     ) -> Result<PlainFileKey, DracoonCryptoError> {
         let private_key_pem = keypair.private_key_container.private_key.as_bytes();
         let rsa = Rsa::private_key_from_pem(private_key_pem)
@@ -502,6 +502,7 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
             count: 0,
             plain_file_key,
             mode: Mode::Decrypt,
+            state: std::marker::PhantomData::<Open>
         })
     }
 
@@ -539,6 +540,7 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
             count: 0,
             plain_file_key,
             mode: Mode::Encrypt,
+            state: std::marker::PhantomData::<Open>
         })
     }
 
@@ -596,8 +598,8 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
         self.buffer
     }
 
-    fn get_plain_file_key(self) -> PlainFileKey {
-        self.plain_file_key
+    fn get_plain_file_key(&self) -> PlainFileKey {
+        self.plain_file_key.clone()
     }
 }
 
@@ -719,7 +721,7 @@ mod tests {
         assert_ne!(key.clone(), enc_file_key.key);
         assert_eq!("123456", enc_file_key.iv);
 
-        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_4096_keypair)
+        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, &plain_4096_keypair)
             .expect("Should not fail");
 
         assert_eq!(key, plain_file_key.key);
@@ -754,7 +756,7 @@ mod tests {
         assert_ne!(key.clone(), enc_file_key.key);
         assert_eq!("123456", enc_file_key.iv);
 
-        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_2048_keypair)
+        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, &plain_2048_keypair)
             .expect("Should not fail");
 
         assert_eq!(key, plain_file_key.key);
