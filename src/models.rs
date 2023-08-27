@@ -9,7 +9,7 @@ use std::str::Utf8Error;
 /// Represents the version of the encrypted file key
 /// Indicates which asymmetric keypair version is required
 /// Standard is 4096 bit (2048 bit for compatibility only)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum FileKeyVersion {
     #[serde(rename = "A")]
     RSA2048_AES256GCM,
@@ -40,7 +40,7 @@ pub enum UserKeyPairVersion {
 /// Contains key, iv and tag used for decryption
 /// key, iv, and tag are base64 encoded bytes
 /// The key is additonally encrypted with public keypair encryption
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FileKey {
     pub key: String,
     pub iv: String,
@@ -230,7 +230,7 @@ impl PlainFileKey {
 }
 
 /// Possible states of rescue keys in a room
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum KeyState {
     #[serde(rename = "none")]
     None,
@@ -241,14 +241,14 @@ pub enum KeyState {
 }
 
 /// Represents the state of the rescue keys in a room
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct EncryptionInfo {
     user_key_state: KeyState,
     room_key_state: KeyState,
     dataspace_key_state: KeyState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DracoonCryptoError {
     RsaOperationFailed,
     RsaImportFailed,
