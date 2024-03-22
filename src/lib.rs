@@ -18,7 +18,7 @@ use openssl::pkey_ctx::PkeyCtx;
 use openssl::rsa::{Padding, Rsa};
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher, Crypter as OpenSslCrypter, Mode};
 
-use log::{debug, error};
+use tracing::{debug, error};
 
 mod models;
 
