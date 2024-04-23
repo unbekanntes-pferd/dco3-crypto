@@ -282,6 +282,12 @@ pub trait PublicKey {
     fn get_public_key(&self) -> &PublicKeyContainer;
 }
 
+/// Trait to get only the private key container of either a private key or
+/// a user keypair container
+pub trait PrivateKey {
+    fn get_private_key(&self) -> &PrivateKeyContainer;
+}
+
 /// Returns only the public key container as reference of a plain
 /// user keypair container
 impl PublicKey for PlainUserKeyPairContainer {
@@ -297,6 +303,20 @@ impl PublicKey for PublicKeyContainer {
     }
 }
 
+/// Returns the private key of a user keypair container as reference
+impl PrivateKey for PlainUserKeyPairContainer {
+    fn get_private_key(&self) -> &PrivateKeyContainer {
+        &self.private_key_container
+    }
+}
+
+/// Returns the private key of a private key container as reference
+impl PrivateKey for PrivateKeyContainer {
+    fn get_private_key(&self) -> &PrivateKeyContainer {
+        self
+    }
+}
+
 /// Trait representing all functions required for asymmetric encryption
 /// - generate a new (plain) keypair
 /// - encrypt / decrypt the private key of a keypair
@@ -306,18 +326,17 @@ pub trait DracoonRSACrypto {
         version: UserKeyPairVersion,
     ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
 
-
     fn encrypt_private_key(
         secret: &str,
         plain_keypair: PlainUserKeyPairContainer,
     ) -> Result<UserKeyPairContainer, DracoonCryptoError>;
 
-    fn decrypt_private_key(
+    fn decrypt_keypair(
         secret: &str,
         keypair: UserKeyPairContainer,
     ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
 
-    fn decrypt_private_key_only(
+    fn decrypt_private_key(
         secret: &str,
         plain_private_key: &PrivateKeyContainer,
     ) -> Result<PrivateKeyContainer, DracoonCryptoError>;
@@ -329,7 +348,7 @@ pub trait DracoonRSACrypto {
 
     fn decrypt_file_key(
         file_key: FileKey,
-        keypair: &PlainUserKeyPairContainer,
+        keypair: impl PrivateKey,
     ) -> Result<PlainFileKey, DracoonCryptoError>;
 }
 
@@ -366,7 +385,7 @@ pub struct Crypter<'b, C, State = Open> {
     pub count: usize,
     pub plain_file_key: PlainFileKey,
     pub mode: Mode,
-    pub state: std::marker::PhantomData<State>
+    pub state: std::marker::PhantomData<State>,
 }
 
 /// Represents methods to return an enrypter over a generic internal C
