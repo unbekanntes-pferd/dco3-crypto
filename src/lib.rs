@@ -252,9 +252,11 @@ impl DracoonRSACrypto for DracoonCrypto {
             .flat_map(|buf| std::str::from_utf8(buf))
             .collect::<String>();
 
-        Ok(PrivateKeyContainer::new(private_key_pem, private_key.version.clone()))
-
-}
+        Ok(PrivateKeyContainer::new(
+            private_key_pem,
+            private_key.version.clone(),
+        ))
+    }
     /// Encrypts a file key used for file encryption using either the public key or a plain keypair
     /// container.
     /// # Example
@@ -425,7 +427,10 @@ impl Decrypt for DracoonCrypto {
     /// let plain_message = DracoonCrypto::decrypt(&enc_message, plain_file_key);
     ///
     /// ```
-    fn decrypt(data: &impl AsRef<[u8]>, plain_file_key: PlainFileKey) -> Result<Vec<u8>, DracoonCryptoError> {
+    fn decrypt(
+        data: &impl AsRef<[u8]>,
+        plain_file_key: PlainFileKey,
+    ) -> Result<Vec<u8>, DracoonCryptoError> {
         let cipher = Cipher::aes_256_gcm();
 
         let key = base64::decode_block(&plain_file_key.key).map_err(|e| {
@@ -445,10 +450,11 @@ impl Decrypt for DracoonCrypto {
 
         let aad = b"";
 
-        let res = decrypt_aead(cipher, &key, Some(&iv), aad, data.as_ref(), &tag).map_err(|_| {
-            error!("Cannot decrypt data (bad data?).");
-            DracoonCryptoError::BadData
-        })?;
+        let res =
+            decrypt_aead(cipher, &key, Some(&iv), aad, data.as_ref(), &tag).map_err(|_| {
+                error!("Cannot decrypt data (bad data?).");
+                DracoonCryptoError::BadData
+            })?;
 
         Ok(res)
     }
@@ -502,7 +508,7 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
             count: 0,
             plain_file_key,
             mode: Mode::Decrypt,
-            state: std::marker::PhantomData::<Open>
+            state: std::marker::PhantomData::<Open>,
         })
     }
 
@@ -540,7 +546,7 @@ impl<'b> ChunkedEncryption<'b, OpenSslCrypter> for Crypter<'b, OpenSslCrypter> {
             count: 0,
             plain_file_key,
             mode: Mode::Encrypt,
-            state: std::marker::PhantomData::<Open>
+            state: std::marker::PhantomData::<Open>,
         })
     }
 
@@ -816,7 +822,6 @@ mod tests {
 
         let mut encrypter = DracoonCrypto::encrypter(&mut buf).expect("Should not fail");
 
-  
         let mut count: usize = 0;
         let mut chunks = message.chunks(8);
 

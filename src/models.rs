@@ -326,7 +326,6 @@ pub trait DracoonRSACrypto {
         version: UserKeyPairVersion,
     ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
 
-
     fn encrypt_private_key(
         secret: &str,
         plain_keypair: PlainUserKeyPairContainer,
@@ -386,7 +385,7 @@ pub struct Crypter<'b, C, State = Open> {
     pub count: usize,
     pub plain_file_key: PlainFileKey,
     pub mode: Mode,
-    pub state: std::marker::PhantomData<State>
+    pub state: std::marker::PhantomData<State>,
 }
 
 /// Represents methods to return an enrypter over a generic internal C
