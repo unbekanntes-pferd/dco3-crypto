@@ -196,10 +196,10 @@ impl DracoonRSACrypto for DracoonCrypto {
     /// DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
     /// let enc_4096_keypair = DracoonCrypto::encrypt_private_key(secret, plain_4096_keypair).unwrap();
     ///
-    /// let plain_keypair = DracoonCrypto::decrypt_private_key(secret, enc_4096_keypair).unwrap();
+    /// let plain_keypair = DracoonCrypto::decrypt_keypair(secret, enc_4096_keypair).unwrap();
     /// ```
     ///
-    fn decrypt_private_key(
+    fn decrypt_keypair(
         secret: &str,
         keypair: UserKeyPairContainer,
     ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError> {
@@ -234,10 +234,10 @@ impl DracoonRSACrypto for DracoonCrypto {
     /// let plain_4096_keypair =
     /// DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
     /// let enc_4096_keypair = DracoonCrypto::encrypt_private_key(secret, plain_4096_keypair).unwrap();
-    /// let plain_private_key = DracoonCrypto::decrypt_private_key_only(secret, &enc_4096_keypair.private_key_container).unwrap();
+    /// let plain_private_key = DracoonCrypto::decrypt_private_key(secret, &enc_4096_keypair.private_key_container).unwrap();
     /// ```
     ///
-    fn decrypt_private_key_only(
+    fn decrypt_private_key(
         secret: &str,
         private_key: &PrivateKeyContainer,
     ) -> Result<PrivateKeyContainer, DracoonCryptoError> {
@@ -333,15 +333,15 @@ impl DracoonRSACrypto for DracoonCrypto {
     /// let plain_file_key = PlainFileKey::try_new_for_encryption().unwrap();
     /// let enc_file_key = DracoonCrypto::encrypt_file_key(plain_file_key, public_key_container).unwrap();
 
-    /// let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, &plain_4096_keypair).unwrap();
+    /// let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_4096_keypair).unwrap();
     ///
     /// ```
     ///
     fn decrypt_file_key(
         file_key: FileKey,
-        keypair: &PlainUserKeyPairContainer,
+        private_key: impl PrivateKey,
     ) -> Result<PlainFileKey, DracoonCryptoError> {
-        let private_key_pem = keypair.private_key_container.private_key.as_bytes();
+        let private_key_pem = private_key.get_private_key().private_key.as_bytes();
         let rsa = Rsa::private_key_from_pem(private_key_pem)
             .map_err(|_| DracoonCryptoError::RsaImportFailed)?;
 
@@ -354,7 +354,7 @@ impl DracoonRSACrypto for DracoonCrypto {
         let mut key_ctx = PkeyCtx::new(&pkey)?;
         let mgf1_md = Md::sha256();
 
-        let md = match keypair.get_public_key().version {
+        let md = match private_key.get_private_key().version {
             UserKeyPairVersion::RSA2048 => Md::sha1(),
             UserKeyPairVersion::RSA4096 => Md::sha256(),
         };
@@ -658,7 +658,7 @@ mod tests {
         );
 
         let plain_4096_keypair =
-            DracoonCrypto::decrypt_private_key(secret, enc_4096_keypair).expect("Should not fail");
+            DracoonCrypto::decrypt_keypair(secret, enc_4096_keypair).expect("Should not fail");
 
         assert_eq!(
             plain_4096_keypair.private_key_container.private_key,
@@ -684,7 +684,7 @@ mod tests {
         );
 
         let plain_2048_keypair =
-            DracoonCrypto::decrypt_private_key(secret, enc_2048_keypair).expect("Should not fail");
+            DracoonCrypto::decrypt_keypair(secret, enc_2048_keypair).expect("Should not fail");
 
         assert_eq!(
             plain_2048_keypair.private_key_container.private_key,
@@ -721,7 +721,7 @@ mod tests {
         assert_ne!(key.clone(), enc_file_key.key);
         assert_eq!("123456", enc_file_key.iv);
 
-        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, &plain_4096_keypair)
+        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_4096_keypair)
             .expect("Should not fail");
 
         assert_eq!(key, plain_file_key.key);
@@ -756,7 +756,7 @@ mod tests {
         assert_ne!(key.clone(), enc_file_key.key);
         assert_eq!("123456", enc_file_key.iv);
 
-        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, &plain_2048_keypair)
+        let plain_file_key = DracoonCrypto::decrypt_file_key(enc_file_key, plain_2048_keypair)
             .expect("Should not fail");
 
         assert_eq!(key, plain_file_key.key);
