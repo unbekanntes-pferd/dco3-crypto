@@ -1,6 +1,6 @@
 [package]
 name = "dco3_crypto"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 authors = ["Octavio Simone"]
 repository = "https://github.com/unbekanntes-pferd/dco3-crypto"
@@ -10,11 +10,15 @@ readme = "README.md"
 keywords = ["dracoon", "cryptography", "openssl"]
 description = "Symmetric and asymmetric encryption for DRACOON in Rust."
 
+[features]
+default = ["vendored-openssl"]
+vendored-openssl = ["openssl/vendored"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tracing = "0.1.40"
+tracing = "0.1.44"
 serde_json = "1"
 serde = { version = "1", features = ["serde_derive"] }
-openssl = { version = "0.10.64", features = ["vendored"] }
+openssl = "0.10.76"
+yasna = "0.5"
