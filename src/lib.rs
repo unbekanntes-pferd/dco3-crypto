@@ -28,7 +28,7 @@
 //! use dco3_crypto::{Decrypt, DracoonCrypto, DracoonRSACrypto, UserKeyPairVersion};
 //!
 //! let keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
-//! let mut encryptor = DracoonCrypto::file_encryptor(keypair.clone()).unwrap();
+//! let mut encryptor = DracoonCrypto::file_encryptor().unwrap();
 //! let mut ciphertext = Vec::new();
 //!
 //! ciphertext.extend_from_slice(&encryptor.update(b"hello ").unwrap());
@@ -36,7 +36,8 @@
 //! let finalized = encryptor.finalize().unwrap();
 //! ciphertext.extend_from_slice(&finalized.final_chunk);
 //!
-//! let mut decryptor = DracoonCrypto::file_decryptor(finalized.file_key, keypair).unwrap();
+//! let file_key = DracoonCrypto::encrypt_file_key(finalized.plain_file_key, keypair.clone()).unwrap();
+//! let mut decryptor = DracoonCrypto::file_decryptor(file_key, keypair).unwrap();
 //! let mut plaintext = Vec::new();
 //! plaintext.extend_from_slice(&decryptor.update(&ciphertext[..3]).unwrap());
 //! plaintext.extend_from_slice(&decryptor.update(&ciphertext[3..]).unwrap());
@@ -88,17 +89,16 @@ struct PrivateKeyEncryptionParams {
 pub struct StreamingEncryptionResult {
     /// Final ciphertext bytes emitted during `finalize`.
     pub final_chunk: Vec<u8>,
-    /// Wrapped file key required for decryption.
-    pub file_key: FileKey,
+    /// Plain file key generated for the stream.
+    pub plain_file_key: PlainFileKey,
 }
 
 /// Incremental file encryptor for AES-256-GCM file content.
 ///
-/// The file key is generated internally and is only exposed as wrapped [`FileKey`] data when the
-/// stream is finalized.
+/// The file key is generated internally and returned as plain key material when the stream is
+/// finalized so callers can wrap it for one or more recipients.
 pub struct FileEncryptor {
     inner: OpenSslFileCrypter,
-    public_key: PublicKeyContainer,
 }
 
 /// Incremental file decryptor for AES-256-GCM file content.
@@ -115,7 +115,7 @@ impl DracoonCrypto {
     /// Creates a streaming encryptor for file content.
     ///
     /// A fresh file key is generated internally. Call [`FileEncryptor::finalize`] to receive the
-    /// wrapped [`FileKey`] for transport or storage.
+    /// plain file key so it can be wrapped for the intended recipients.
     ///
     /// # Examples
     ///
@@ -123,7 +123,7 @@ impl DracoonCrypto {
     /// use dco3_crypto::{Decrypt, DracoonCrypto, DracoonRSACrypto, UserKeyPairVersion};
     ///
     /// let keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
-    /// let mut encryptor = DracoonCrypto::file_encryptor(keypair.clone()).unwrap();
+    /// let mut encryptor = DracoonCrypto::file_encryptor().unwrap();
     /// let mut ciphertext = Vec::new();
     ///
     /// ciphertext.extend_from_slice(&encryptor.update(b"part one ").unwrap());
@@ -131,13 +131,14 @@ impl DracoonCrypto {
     /// let finalized = encryptor.finalize().unwrap();
     /// ciphertext.extend_from_slice(&finalized.final_chunk);
     ///
-    /// let plaintext = DracoonCrypto::decrypt(&ciphertext, finalized.file_key, keypair).unwrap();
+    /// let file_key =
+    ///     DracoonCrypto::encrypt_file_key(finalized.plain_file_key, keypair.clone()).unwrap();
+    /// let plaintext = DracoonCrypto::decrypt(&ciphertext, file_key, keypair).unwrap();
     /// assert_eq!(plaintext, b"part one part two");
     /// ```
-    pub fn file_encryptor(public_key: impl PublicKey) -> Result<FileEncryptor, DracoonCryptoError> {
+    pub fn file_encryptor() -> Result<FileEncryptor, DracoonCryptoError> {
         Ok(FileEncryptor {
             inner: OpenSslFileCrypter::new_for_encryption()?,
-            public_key: public_key.get_public_key().clone(),
         })
     }
 
@@ -341,15 +342,14 @@ impl FileEncryptor {
         self.inner.update(data)
     }
 
-    /// Finalizes the stream and returns the last ciphertext bytes plus the wrapped file key.
+    /// Finalizes the stream and returns the last ciphertext bytes plus the plain file key.
     pub fn finalize(mut self) -> Result<StreamingEncryptionResult, DracoonCryptoError> {
         let final_chunk = self.inner.finalize()?;
-        let file_key =
-            DracoonCrypto::encrypt_file_key(self.inner.plain_file_key.clone(), self.public_key)?;
+        let plain_file_key = self.inner.plain_file_key;
 
         Ok(StreamingEncryptionResult {
             final_chunk,
-            file_key,
+            plain_file_key,
         })
     }
 }
@@ -676,12 +676,13 @@ impl Encrypt for DracoonCrypto {
         data: impl AsRef<[u8]>,
         public_key: impl PublicKey,
     ) -> Result<EncryptionResult, DracoonCryptoError> {
-        let mut encryptor = Self::file_encryptor(public_key)?;
+        let mut encryptor = Self::file_encryptor()?;
         let mut encrypted = encryptor.update(data.as_ref())?;
         let final_result = encryptor.finalize()?;
         encrypted.extend_from_slice(&final_result.final_chunk);
+        let file_key = Self::encrypt_file_key(final_result.plain_file_key, public_key)?;
 
-        Ok((encrypted, final_result.file_key))
+        Ok((encrypted, file_key))
     }
 }
 

@@ -272,17 +272,16 @@ fn parse_encrypted_private_key_profile(pem: &str) -> EncryptedPrivateKeyProfile 
 
 fn encrypt_streaming(
     data: &[u8],
-    public_key: impl PublicKey,
     chunk_sizes: &[usize],
-) -> Result<(Vec<u8>, FileKey), DracoonCryptoError> {
-    let mut encryptor = DracoonCrypto::file_encryptor(public_key)?;
+) -> Result<(Vec<u8>, PlainFileKey), DracoonCryptoError> {
+    let mut encryptor = DracoonCrypto::file_encryptor()?;
     let mut ciphertext = Vec::new();
     for chunk in chunk_slices(data, chunk_sizes) {
         ciphertext.extend_from_slice(&encryptor.update(chunk)?);
     }
     let finalized = encryptor.finalize()?;
     ciphertext.extend_from_slice(&finalized.final_chunk);
-    Ok((ciphertext, finalized.file_key))
+    Ok((ciphertext, finalized.plain_file_key))
 }
 
 fn decrypt_streaming(
@@ -936,10 +935,12 @@ mod streaming_encrypt {
     #[test]
     fn finalize_without_update() {
         let keypair = generate_keypair(UserKeyPairVersion::RSA4096);
-        let mut encryptor = DracoonCrypto::file_encryptor(keypair.clone()).unwrap();
+        let mut encryptor = DracoonCrypto::file_encryptor().unwrap();
         let first_chunk = encryptor.update(&[]).unwrap();
         let finalized = encryptor.finalize().unwrap();
-        let plaintext = DracoonCrypto::decrypt(&first_chunk, finalized.file_key, keypair).unwrap();
+        let file_key =
+            DracoonCrypto::encrypt_file_key(finalized.plain_file_key, keypair.clone()).unwrap();
+        let plaintext = DracoonCrypto::decrypt(&first_chunk, file_key, keypair).unwrap();
 
         assert!(first_chunk.is_empty());
         assert!(finalized.final_chunk.is_empty());
@@ -970,7 +971,8 @@ mod streaming_encrypt {
         let keypair = generate_keypair(UserKeyPairVersion::RSA4096);
         let plaintext = sample_plaintext(4096);
 
-        let (ciphertext, file_key) = encrypt_streaming(&plaintext, keypair.clone(), &[1]).unwrap();
+        let (ciphertext, plain_file_key) = encrypt_streaming(&plaintext, &[1]).unwrap();
+        let file_key = DracoonCrypto::encrypt_file_key(plain_file_key, keypair.clone()).unwrap();
         let decrypted = DracoonCrypto::decrypt(&ciphertext, file_key, keypair).unwrap();
 
         assert_eq!(decrypted, plaintext);
@@ -981,11 +983,32 @@ mod streaming_encrypt {
         let keypair = generate_keypair(UserKeyPairVersion::RSA4096);
         let plaintext = sample_plaintext(256 * 1024);
 
-        let (ciphertext, file_key) =
-            encrypt_streaming(&plaintext, keypair.clone(), &[1, 17, 3, 64, 2, 1024, 33]).unwrap();
+        let (ciphertext, plain_file_key) =
+            encrypt_streaming(&plaintext, &[1, 17, 3, 64, 2, 1024, 33]).unwrap();
+        let file_key = DracoonCrypto::encrypt_file_key(plain_file_key, keypair.clone()).unwrap();
         let decrypted = DracoonCrypto::decrypt(&ciphertext, file_key, keypair).unwrap();
 
         assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn plain_file_key_can_be_wrapped_for_multiple_recipients() {
+        let owner = generate_keypair(UserKeyPairVersion::RSA4096);
+        let recipient = generate_keypair(UserKeyPairVersion::RSA4096);
+        let plaintext = sample_plaintext(4096);
+
+        let (ciphertext, plain_file_key) = encrypt_streaming(&plaintext, &[9, 13, 27]).unwrap();
+        let owner_file_key =
+            DracoonCrypto::encrypt_file_key(plain_file_key.clone(), owner.clone()).unwrap();
+        let recipient_file_key =
+            DracoonCrypto::encrypt_file_key(plain_file_key, recipient.clone()).unwrap();
+
+        let owner_plaintext = DracoonCrypto::decrypt(&ciphertext, owner_file_key, owner).unwrap();
+        let recipient_plaintext =
+            DracoonCrypto::decrypt(&ciphertext, recipient_file_key, recipient).unwrap();
+
+        assert_eq!(owner_plaintext, plaintext);
+        assert_eq!(recipient_plaintext, plaintext);
     }
 }
 
