@@ -6,6 +6,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
+use yasna::models::ObjectIdentifier;
 
 const TEST_PASSWORD: &str = "Qwer1234!";
 
@@ -192,6 +193,83 @@ fn parse_public_key(public_key: &PublicKeyContainer) -> PKey<Public> {
     PKey::public_key_from_pem(public_key.public_key.as_bytes()).unwrap()
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct EncryptedPrivateKeyProfile {
+    algorithm: ObjectIdentifier,
+    kdf: ObjectIdentifier,
+    salt_len: usize,
+    iteration_count: u64,
+    prf: Option<ObjectIdentifier>,
+    encryption_scheme: ObjectIdentifier,
+    iv_len: usize,
+}
+
+fn pem_to_der(pem: &str) -> Vec<u8> {
+    let body = pem
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .collect::<String>();
+    base64::decode_block(&body).unwrap()
+}
+
+fn parse_encrypted_private_key_profile(pem: &str) -> EncryptedPrivateKeyProfile {
+    let der = pem_to_der(pem);
+    yasna::parse_der(&der, |reader| {
+        reader.read_sequence(|reader| {
+            let profile = reader.next().read_sequence(|reader| {
+                let algorithm = reader.next().read_oid()?;
+                let (kdf, salt_len, iteration_count, prf, encryption_scheme, iv_len) =
+                    reader.next().read_sequence(|reader| {
+                        let (kdf, salt_len, iteration_count, prf) =
+                            reader.next().read_sequence(|reader| {
+                                let kdf = reader.next().read_oid()?;
+                                let (salt_len, iteration_count, prf) =
+                                    reader.next().read_sequence(|reader| {
+                                        let salt = reader.next().read_bytes()?;
+                                        let iteration_count = reader.next().read_u64()?;
+                                        let prf = reader.read_optional(|reader| {
+                                            reader.read_sequence(|reader| {
+                                                let oid = reader.next().read_oid()?;
+                                                reader.next().read_null()?;
+                                                Ok(oid)
+                                            })
+                                        })?;
+                                        Ok((salt.len(), iteration_count, prf))
+                                    })?;
+                                Ok((kdf, salt_len, iteration_count, prf))
+                            })?;
+                        let (encryption_scheme, iv_len) =
+                            reader.next().read_sequence(|reader| {
+                                let encryption_scheme = reader.next().read_oid()?;
+                                let iv = reader.next().read_bytes()?;
+                                Ok((encryption_scheme, iv.len()))
+                            })?;
+                        Ok((
+                            kdf,
+                            salt_len,
+                            iteration_count,
+                            prf,
+                            encryption_scheme,
+                            iv_len,
+                        ))
+                    })?;
+                Ok(EncryptedPrivateKeyProfile {
+                    algorithm,
+                    kdf,
+                    salt_len,
+                    iteration_count,
+                    prf,
+                    encryption_scheme,
+                    iv_len,
+                })
+            })?;
+            let _ = reader.next().read_bytes()?;
+            Ok(profile)
+        })
+    })
+    .unwrap()
+}
+
 fn encrypt_streaming(
     data: &[u8],
     public_key: impl PublicKey,
@@ -359,6 +437,43 @@ mod encrypt_private_key {
         );
     }
 
+    #[test]
+    fn uses_java_js_private_key_profile() {
+        let keypair = generate_keypair(UserKeyPairVersion::RSA4096);
+        let encrypted = DracoonCrypto::encrypt_private_key(TEST_PASSWORD, keypair).unwrap();
+        let profile =
+            parse_encrypted_private_key_profile(&encrypted.private_key_container.private_key);
+
+        assert_eq!(profile.algorithm, oid_pbes2());
+        assert_eq!(profile.kdf, oid_pbkdf2());
+        assert_eq!(profile.salt_len, PRIVATE_KEY_SALT_LEN);
+        assert_eq!(
+            profile.iteration_count,
+            PRIVATE_KEY_PBKDF2_ITERATIONS as u64
+        );
+        assert_eq!(profile.prf, None);
+        assert_eq!(profile.encryption_scheme, oid_aes_256_cbc());
+        assert_eq!(profile.iv_len, PRIVATE_KEY_IV_LEN);
+    }
+
+    #[test]
+    fn matches_current_js_private_key_profile() {
+        let keypair = generate_keypair(UserKeyPairVersion::RSA4096);
+        let encrypted = DracoonCrypto::encrypt_private_key(TEST_PASSWORD, keypair).unwrap();
+        let rust_profile =
+            parse_encrypted_private_key_profile(&encrypted.private_key_container.private_key);
+
+        let fixture: AsyncKeypairFixture =
+            load_json("keys/javascript/kp_rsa4096_2/kp_rsa4096_2.json");
+        let js_profile = parse_encrypted_private_key_profile(
+            &fixture
+                .encrypted_user_key_pair_container
+                .private_key_container
+                .private_key,
+        );
+
+        assert_eq!(rust_profile, js_profile);
+    }
 }
 
 mod decrypt_private_key {

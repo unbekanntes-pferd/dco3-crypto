@@ -46,17 +46,25 @@
 //! ```
 
 use openssl::base64;
+use openssl::hash::MessageDigest;
 use openssl::md::Md;
+use openssl::pkcs5;
 use openssl::pkey::{PKey, Private};
 use openssl::pkey_ctx::PkeyCtx;
+use openssl::rand::rand_bytes;
 use openssl::rsa::{Padding, Rsa};
-use openssl::symm::{Cipher, Crypter as OpenSslCrypter, Mode};
+use openssl::symm::{encrypt, Cipher, Crypter as OpenSslCrypter, Mode};
 
 use tracing::{debug, error};
+use yasna::models::ObjectIdentifier;
 
 mod models;
 
 pub use models::*;
+
+const PRIVATE_KEY_PBKDF2_ITERATIONS: usize = 1_300_000;
+const PRIVATE_KEY_SALT_LEN: usize = 20;
+const PRIVATE_KEY_IV_LEN: usize = 16;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum StreamingMode {
@@ -69,6 +77,11 @@ struct OpenSslFileCrypter {
     cipher: Cipher,
     plain_file_key: PlainFileKey,
     mode: StreamingMode,
+}
+
+struct PrivateKeyEncryptionParams {
+    salt: [u8; PRIVATE_KEY_SALT_LEN],
+    iv: [u8; PRIVATE_KEY_IV_LEN],
 }
 
 /// Result returned by [`FileEncryptor::finalize`].
@@ -223,6 +236,103 @@ impl DracoonCrypto {
         Err(last_error)
     }
 
+    /// Encrypts a private key into an `ENCRYPTED PRIVATE KEY` PEM with the Java/JS SDK profile.
+    fn encrypt_private_key_pem(
+        key: &PKey<Private>,
+        secret: &str,
+    ) -> Result<String, DracoonCryptoError> {
+        let plain_pkcs8 = key.private_key_to_pkcs8()?;
+        let params = PrivateKeyEncryptionParams::generate()?;
+        let encrypted_key = Self::encrypt_pkcs8_payload(&plain_pkcs8, secret.as_bytes(), &params)?;
+        let der = Self::build_encrypted_private_key_info(&encrypted_key, &params);
+        Ok(Self::pem_encode_encrypted_private_key_info(&der))
+    }
+
+    /// Derives the AES key for private-key protection and encrypts the PKCS#8 payload.
+    fn encrypt_pkcs8_payload(
+        plain_pkcs8: &[u8],
+        password: &[u8],
+        params: &PrivateKeyEncryptionParams,
+    ) -> Result<Vec<u8>, DracoonCryptoError> {
+        let mut key = [0u8; 32];
+        pkcs5::pbkdf2_hmac(
+            password,
+            &params.salt,
+            PRIVATE_KEY_PBKDF2_ITERATIONS,
+            MessageDigest::sha1(),
+            &mut key,
+        )?;
+
+        encrypt(Cipher::aes_256_cbc(), &key, Some(&params.iv), plain_pkcs8)
+            .map_err(DracoonCryptoError::from)
+    }
+
+    /// Builds the PKCS#8 `EncryptedPrivateKeyInfo` DER envelope with PBES2/PBKDF2/AES-256-CBC.
+    fn build_encrypted_private_key_info(
+        encrypted_key: &[u8],
+        params: &PrivateKeyEncryptionParams,
+    ) -> Vec<u8> {
+        yasna::construct_der(|writer| {
+            writer.write_sequence(|writer| {
+                writer.next().write_sequence(|writer| {
+                    writer.next().write_oid(&oid_pbes2());
+                    writer.next().write_sequence(|writer| {
+                        writer.next().write_sequence(|writer| {
+                            writer.next().write_oid(&oid_pbkdf2());
+                            writer.next().write_sequence(|writer| {
+                                writer.next().write_bytes(&params.salt);
+                                writer
+                                    .next()
+                                    .write_u64(PRIVATE_KEY_PBKDF2_ITERATIONS as u64);
+                            });
+                        });
+                        writer.next().write_sequence(|writer| {
+                            writer.next().write_oid(&oid_aes_256_cbc());
+                            writer.next().write_bytes(&params.iv);
+                        });
+                    });
+                });
+                writer.next().write_bytes(encrypted_key);
+            });
+        })
+    }
+
+    /// Encodes `EncryptedPrivateKeyInfo` DER as a PEM document.
+    fn pem_encode_encrypted_private_key_info(der: &[u8]) -> String {
+        let b64 = base64::encode_block(der);
+        let mut pem = String::from("-----BEGIN ENCRYPTED PRIVATE KEY-----\n");
+
+        for chunk in b64.as_bytes().chunks(64) {
+            pem.push_str(std::str::from_utf8(chunk).expect("base64 output is utf8"));
+            pem.push('\n');
+        }
+
+        pem.push_str("-----END ENCRYPTED PRIVATE KEY-----\n");
+        pem
+    }
+}
+
+impl PrivateKeyEncryptionParams {
+    /// Generates salt and IV for encrypted private-key output.
+    fn generate() -> Result<Self, DracoonCryptoError> {
+        let mut salt = [0u8; PRIVATE_KEY_SALT_LEN];
+        let mut iv = [0u8; PRIVATE_KEY_IV_LEN];
+        rand_bytes(&mut salt)?;
+        rand_bytes(&mut iv)?;
+        Ok(Self { salt, iv })
+    }
+}
+
+fn oid_pbes2() -> ObjectIdentifier {
+    ObjectIdentifier::from_slice(&[1, 2, 840, 113549, 1, 5, 13])
+}
+
+fn oid_pbkdf2() -> ObjectIdentifier {
+    ObjectIdentifier::from_slice(&[1, 2, 840, 113549, 1, 5, 12])
+}
+
+fn oid_aes_256_cbc() -> ObjectIdentifier {
+    ObjectIdentifier::from_slice(&[2, 16, 840, 1, 101, 3, 4, 1, 42])
 }
 
 impl FileEncryptor {
@@ -413,9 +523,9 @@ impl DracoonRSACrypto for DracoonCrypto {
         let secret = secret.as_bytes();
         let private_key_pem = plain_keypair.private_key_container.private_key.as_bytes();
 
-        let private_key_pem = Rsa::private_key_from_pem(private_key_pem)?
-            .private_key_to_pem_pkcs8_passphrase(Cipher::aes_256_cbc(), secret)?;
-        let private_key_pem = std::str::from_utf8(&private_key_pem)?.to_string();
+        let rsa = Rsa::private_key_from_pem(private_key_pem)?;
+        let rsa = PKey::from_rsa(rsa)?;
+        let private_key_pem = Self::encrypt_private_key_pem(&rsa, std::str::from_utf8(secret)?)?;
 
         debug!(
             "Keypair (private key version: {:?}) encrypted.",
