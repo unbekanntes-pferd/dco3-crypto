@@ -603,3 +603,6 @@ fn iso_8859_1_bytes(secret: &str) -> Option<Vec<u8>> {
 
     Some(out)
 }
+
+#[cfg(test)]
+mod tests;
