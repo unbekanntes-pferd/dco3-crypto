@@ -2,14 +2,14 @@
 use openssl::base64;
 use openssl::error::ErrorStack;
 use openssl::rand::rand_bytes;
-use openssl::symm::Mode;
 use serde::{Deserialize, Serialize};
 use std::str::Utf8Error;
 
-/// Represents the version of the encrypted file key
-/// Indicates which asymmetric keypair version is required
-/// Standard is 4096 bit (2048 bit for compatibility only)
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// Version of the wrapped file key.
+///
+/// The value encodes the required RSA key pair version together with AES-256-GCM as the file
+/// content cipher.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum FileKeyVersion {
     #[serde(rename = "A")]
     RSA2048_AES256GCM,
@@ -17,17 +17,18 @@ pub enum FileKeyVersion {
     RSA4096_AES256GCM,
 }
 
-/// Represents the used cipher for the plain file key used
-/// for symmetric encryption / decryption
-/// Only AES256 GCM is currently used
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// Version of the plain file key.
+///
+/// DRACOON currently uses AES-256-GCM only.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum PlainFileKeyVersion {
     #[serde(rename = "AES-256-GCM")]
     AES256CM,
 }
 
-/// Represents the user keypair version
-/// Standard is 4096 bit (2048 bit for compatibility only)
+/// Version of the user key pair.
+///
+/// RSA-4096 is the default. RSA-2048 is kept for compatibility.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum UserKeyPairVersion {
     #[serde(rename = "A")]
@@ -36,11 +37,10 @@ pub enum UserKeyPairVersion {
     RSA4096,
 }
 
-/// Represents the encrypted file key
-/// Contains key, iv and tag used for decryption
-/// key, iv, and tag are base64 encoded bytes
-/// The key is additonally encrypted with public keypair encryption
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Wrapped file key used to decrypt AES-256-GCM file content.
+///
+/// `key`, `iv`, and `tag` are base64-encoded. `key` is wrapped with the receiver's public key.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FileKey {
     pub key: String,
     pub iv: String,
@@ -48,11 +48,10 @@ pub struct FileKey {
     pub tag: Option<String>,
 }
 
-/// Represents the encrypted file key
-/// Contains key, iv and tag used for decryption
-/// key, iv, and tag are base64 encoded bytes
-/// key is the plain base64 encoded random bytes used
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Plain file key used for AES-256-GCM file content encryption and decryption.
+///
+/// `key`, `iv`, and `tag` are base64-encoded.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PlainFileKey {
     pub key: String,
     pub iv: String,
@@ -60,8 +59,8 @@ pub struct PlainFileKey {
     pub tag: Option<String>,
 }
 
-/// Container holding only the public key used for file key encryption
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Public key container used to wrap file keys.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyContainer {
     pub version: UserKeyPairVersion,
@@ -71,8 +70,8 @@ pub struct PublicKeyContainer {
     pub created_by: Option<u64>,
 }
 
-/// Container holding only the private key used for file key decryption
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Private key container used to unwrap file keys.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateKeyContainer {
     pub version: UserKeyPairVersion,
@@ -82,18 +81,20 @@ pub struct PrivateKeyContainer {
     pub created_by: Option<u64>,
 }
 
-/// Asymmetric user keypair container
-/// The private key is protected via secret and needs to be decrypted for usage
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Encrypted user key pair container.
+///
+/// The private key is protected with a passphrase.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UserKeyPairContainer {
     pub private_key_container: PrivateKeyContainer,
     pub public_key_container: PublicKeyContainer,
 }
 
-/// Asymmetric plain user keypair container
-/// The private key is in plain and can be used for decryption
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// Plain user key pair container.
+///
+/// The private key is unencrypted and ready for cryptographic operations.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlainUserKeyPairContainer {
     pub private_key_container: PrivateKeyContainer,
@@ -101,7 +102,7 @@ pub struct PlainUserKeyPairContainer {
 }
 
 impl PrivateKeyContainer {
-    /// Create a new private key container from PEM
+    /// Creates a private key container from a PEM-encoded private key.
     pub fn new(private_key_pem: String, version: UserKeyPairVersion) -> Self {
         Self {
             private_key: private_key_pem,
@@ -114,7 +115,7 @@ impl PrivateKeyContainer {
 }
 
 impl PublicKeyContainer {
-    /// Create a new public key container from PEM
+    /// Creates a public key container from a PEM-encoded public key.
     pub fn new(public_key_pem: String, version: UserKeyPairVersion) -> Self {
         Self {
             public_key: public_key_pem,
@@ -127,8 +128,7 @@ impl PublicKeyContainer {
 }
 
 impl PlainUserKeyPairContainer {
-    /// Create a new plain user keypair container without private key encryption
-    /// Accepts private and public key PEM and the desired version (4096 bit is recommended)
+    /// Creates a plain user key pair container from PEM-encoded key material.
     pub fn new(
         private_key_pem: String,
         public_key_pem: String,
@@ -143,8 +143,8 @@ impl PlainUserKeyPairContainer {
         }
     }
 
-    /// Create a new plain user keypair container without private key encryption
-    /// Accepts existing encrypted keypair and a plain private key PEM
+    /// Rebuilds a plain user key pair container from an encrypted key pair and decrypted private
+    /// key PEM.
     pub fn new_from_keypair(
         enc_keypair: UserKeyPairContainer,
         plain_private_key_pem: &str,
@@ -160,6 +160,8 @@ impl PlainUserKeyPairContainer {
 }
 
 impl UserKeyPairContainer {
+    /// Rebuilds an encrypted user key pair container from a plain key pair and encrypted private
+    /// key PEM.
     pub fn new_from_plain_keypair(
         plain_keypair: PlainUserKeyPairContainer,
         enc_private_key_pem: &str,
@@ -177,6 +179,7 @@ impl UserKeyPairContainer {
 }
 
 impl FileKey {
+    /// Creates a wrapped file key from plain file key material and wrapped key bytes.
     pub fn new_from_plain_key(
         plain_file_key: PlainFileKey,
         enc_key: &str,
@@ -192,9 +195,7 @@ impl FileKey {
 }
 
 impl PlainFileKey {
-    /// Create a plain file key used for symmetric encryption / decryption (AES256 GCM)
-    /// Accepts the encrypted file key and the plain file key (base64 encoded)
-    /// Returns the plain file key
+    /// Creates plain file key material from a wrapped file key and base64-encoded key bytes.
     pub fn new_from_file_key(enc_file_key: FileKey, plain_file_key: &str) -> Self {
         Self {
             key: plain_file_key.to_string(),
@@ -204,7 +205,8 @@ impl PlainFileKey {
         }
     }
 
-    pub fn try_new_for_encryption() -> Result<Self, DracoonCryptoError> {
+    /// Creates fresh random file key material for AES-256-GCM encryption.
+    pub(crate) fn try_new_for_encryption() -> Result<Self, DracoonCryptoError> {
         let mut key: [u8; 32] = [0; 32];
         rand_bytes(&mut key)?;
 
@@ -224,12 +226,13 @@ impl PlainFileKey {
         Ok(plain_file_key)
     }
 
+    /// Stores the GCM authentication tag on the file key.
     pub fn set_tag(&mut self, tag: String) {
         self.tag = Some(tag);
     }
 }
 
-/// Possible states of rescue keys in a room
+/// State of rescue keys in a room.
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum KeyState {
     #[serde(rename = "none")]
@@ -240,7 +243,7 @@ pub enum KeyState {
     Pending,
 }
 
-/// Represents the state of the rescue keys in a room
+/// Rescue-key state for a room.
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct EncryptionInfo {
     user_key_state: KeyState,
@@ -248,16 +251,26 @@ pub struct EncryptionInfo {
     dataspace_key_state: KeyState,
 }
 
+/// Errors returned by the DRACOON crypto API.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DracoonCryptoError {
+    /// RSA encryption or decryption failed.
     RsaOperationFailed,
+    /// RSA key import failed.
     RsaImportFailed,
+    /// Byte-to-string conversion failed.
     ByteParseError,
+    /// OpenSSL crypter setup or processing failed.
     CrypterOperationFailed(String),
+    /// RSA key pair versions do not match the requested operation.
     InvalidKeypairVersion,
+    /// OpenSSL returned invalid data.
     BadData,
+    /// Wrapped file key data is malformed.
     InvalidFileKeyFormat(String),
+    /// Tag validation failed.
     InvalidTag,
+    /// Fallback error for unmapped failures.
     Unknown,
 }
 
@@ -273,156 +286,149 @@ impl From<Utf8Error> for DracoonCryptoError {
     }
 }
 
-pub type EncryptionResult = (Vec<u8>, PlainFileKey);
-pub type ChunkedEncryptionResult = (Vec<u8>, Option<PlainFileKey>);
+/// Result of one-shot file encryption.
+///
+/// The tuple contains `(ciphertext, wrapped_file_key)`.
+pub type EncryptionResult = (Vec<u8>, FileKey);
 
-/// Trait to get only the public key container of either a public key
-/// or a user keypair container
+/// Exposes a public key container.
 pub trait PublicKey {
+    /// Returns the public key container.
     fn get_public_key(&self) -> &PublicKeyContainer;
 }
 
-/// Trait to get only the private key container of either a private key or
-/// a user keypair container
+/// Exposes a private key container.
 pub trait PrivateKey {
+    /// Returns the private key container.
     fn get_private_key(&self) -> &PrivateKeyContainer;
 }
 
-/// Returns only the public key container as reference of a plain
-/// user keypair container
+/// Exposes the public key container of a plain user key pair.
 impl PublicKey for PlainUserKeyPairContainer {
     fn get_public_key(&self) -> &PublicKeyContainer {
         &self.public_key_container
     }
 }
 
-/// Returns the public key of a public key container as reference
+/// Exposes the public key container directly.
 impl PublicKey for PublicKeyContainer {
     fn get_public_key(&self) -> &PublicKeyContainer {
         self
     }
 }
 
-/// Returns the private key of a user keypair container as reference
+/// Exposes the private key container of a plain user key pair.
 impl PrivateKey for PlainUserKeyPairContainer {
     fn get_private_key(&self) -> &PrivateKeyContainer {
         &self.private_key_container
     }
 }
 
-/// Returns the private key of a private key container as reference
+/// Exposes the private key container directly.
 impl PrivateKey for PrivateKeyContainer {
     fn get_private_key(&self) -> &PrivateKeyContainer {
         self
     }
 }
 
-/// Trait representing all functions required for asymmetric encryption
-/// - generate a new (plain) keypair
-/// - encrypt / decrypt the private key of a keypair
-/// - encrypt a file key using the public key of a keypair
+/// Asymmetric DRACOON crypto operations.
 pub trait DracoonRSACrypto {
+    /// Generates a plain user key pair.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dco3_crypto::{DracoonCrypto, DracoonRSACrypto, UserKeyPairVersion};
+    ///
+    /// let keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
+    /// assert!(keypair.private_key_container.private_key.contains("BEGIN RSA PRIVATE KEY"));
+    /// assert!(keypair.public_key_container.public_key.contains("BEGIN PUBLIC KEY"));
+    /// ```
     fn create_plain_user_keypair(
         version: UserKeyPairVersion,
     ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
 
+    /// Encrypts the private key of a user key pair with a passphrase.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dco3_crypto::{DracoonCrypto, DracoonRSACrypto, UserKeyPairVersion};
+    ///
+    /// let keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
+    /// let encrypted = DracoonCrypto::encrypt_private_key("secret", keypair).unwrap();
+    ///
+    /// assert!(encrypted.private_key_container.private_key.contains("BEGIN ENCRYPTED PRIVATE KEY"));
+    /// ```
     fn encrypt_private_key(
         secret: &str,
         plain_keypair: PlainUserKeyPairContainer,
     ) -> Result<UserKeyPairContainer, DracoonCryptoError>;
 
+    /// Decrypts an encrypted user key pair with the passphrase.
     fn decrypt_keypair(
         secret: &str,
         keypair: UserKeyPairContainer,
     ) -> Result<PlainUserKeyPairContainer, DracoonCryptoError>;
 
+    /// Decrypts only the private key container with the passphrase.
     fn decrypt_private_key(
         secret: &str,
         plain_private_key: &PrivateKeyContainer,
     ) -> Result<PrivateKeyContainer, DracoonCryptoError>;
 
+    /// Wraps a plain file key with the public key.
     fn encrypt_file_key(
         plain_file_key: PlainFileKey,
         public_key: impl PublicKey,
     ) -> Result<FileKey, DracoonCryptoError>;
 
+    /// Unwraps a file key with the private key.
     fn decrypt_file_key(
         file_key: FileKey,
         keypair: impl PrivateKey,
     ) -> Result<PlainFileKey, DracoonCryptoError>;
 }
 
-/// Trait representing necessary functions for symmetric encryption
-/// - encrypt on the fly
-/// - return an encrypter for chunked encryption
+/// Symmetric file encryption.
 pub trait Encrypt {
-    fn encrypt(data: impl AsRef<[u8]>) -> Result<EncryptionResult, DracoonCryptoError>;
+    /// Encrypts file content in one shot with a fresh internal file key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dco3_crypto::{Decrypt, DracoonCrypto, DracoonRSACrypto, Encrypt, UserKeyPairVersion};
+    ///
+    /// let keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
+    /// let (ciphertext, file_key) = DracoonCrypto::encrypt(b"hello DRACOON", keypair.clone()).unwrap();
+    /// let decrypted = DracoonCrypto::decrypt(&ciphertext, file_key, keypair).unwrap();
+    ///
+    /// assert_eq!(decrypted, b"hello DRACOON");
+    /// ```
+    fn encrypt(
+        data: impl AsRef<[u8]>,
+        public_key: impl PublicKey,
+    ) -> Result<EncryptionResult, DracoonCryptoError>;
 }
 
-/// Trait representing necessary functions for symmetric decryption
-/// - decrypt on the fly
-/// - return a decrypter for chunked decryption
+/// Symmetric file decryption.
 pub trait Decrypt {
+    /// Decrypts file content in one shot with the wrapped file key and private key.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use dco3_crypto::{Decrypt, DracoonCrypto, DracoonRSACrypto, Encrypt, UserKeyPairVersion};
+    ///
+    /// let keypair = DracoonCrypto::create_plain_user_keypair(UserKeyPairVersion::RSA4096).unwrap();
+    /// let (ciphertext, file_key) = DracoonCrypto::encrypt(b"hello DRACOON", keypair.clone()).unwrap();
+    /// let decrypted = DracoonCrypto::decrypt(&ciphertext, file_key, keypair).unwrap();
+    ///
+    /// assert_eq!(decrypted, b"hello DRACOON");
+    /// ```
     fn decrypt(
         data: &impl AsRef<[u8]>,
-        plain_file_key: PlainFileKey,
+        file_key: FileKey,
+        private_key: impl PrivateKey,
     ) -> Result<Vec<u8>, DracoonCryptoError>;
-}
-
-pub struct Open;
-pub struct Finalized;
-
-/// Allows chunked en- and decryption.
-/// Holds a reference to a buffer to store the mssage, processed bytes as count and
-/// the used plain file key and mode.
-/// Requires generic type annotation
-/// The type 'C' represents an internal handler for the encryption functions with chunking
-pub struct Crypter<'b, C, State = Open> {
-    // this is a generic type representing the internal handler for chunked encryption
-    // example implementation see lib.rs for openssl Crypter
-    pub crypter: C,
-    pub buffer: &'b mut Vec<u8>,
-    pub count: usize,
-    pub plain_file_key: PlainFileKey,
-    pub mode: Mode,
-    pub state: std::marker::PhantomData<State>,
-}
-
-/// Represents methods to return an enrypter over a generic internal C
-/// See usage of Crypter and relevant chunked encryption for Crypter<OpenSslCrypter)
-pub trait Encrypter<C> {
-    /// Returns an encrypter by passing a mutable buffer to write the encrypted message to
-    fn encrypter(buffer: &mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
-}
-
-/// Represents methods to return a decrypter over a generic internal C
-/// See usage of Crypter and relevant chunked encryption for Crypter<OpenSslCrypter)
-pub trait Decrypter<C> {
-    /// Returns a decrypter by passing the plain file key used for the file
-    /// and a mutable buffer to write the plain message to
-    fn decrypter(
-        plain_file_key: PlainFileKey,
-        buffer: &mut Vec<u8>,
-    ) -> Result<Crypter<C>, DracoonCryptoError>;
-}
-
-/// Represents all functions required for a Crypter to perform chunked encryption / decryption
-pub trait ChunkedEncryption<'b, C> {
-    /// Finalize decryption / encryption
-    fn finalize(&mut self) -> Result<usize, DracoonCryptoError>;
-    /// Get the message (result of encryption / decryption) from buffer
-    fn get_message(&mut self) -> &Vec<u8>;
-    /// Get the plain file key used for either encryption or decryption
-    fn get_plain_file_key(&self) -> PlainFileKey;
-    /// Set the tag before finalizing the encryption
-    fn set_tag(&mut self, tag: &[u8]) -> Result<(), DracoonCryptoError>;
-    /// Returns a Crypter for decryption by passing the plain file key and a writable (mutable) buffer
-    fn try_new_for_decryption(
-        plain_file_key: PlainFileKey,
-        buffer: &'b mut Vec<u8>,
-    ) -> Result<Crypter<C>, DracoonCryptoError>;
-    /// Returns a Crypter for enryption by passing a writable (mutable) buffer
-    fn try_new_for_encryption(buffer: &'b mut Vec<u8>) -> Result<Crypter<C>, DracoonCryptoError>;
-    /// Update the Crypter with given data
-    fn update(&mut self, data: &[u8]) -> Result<usize, DracoonCryptoError>;
 }
