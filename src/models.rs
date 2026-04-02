@@ -9,6 +9,7 @@ use std::str::Utf8Error;
 ///
 /// The value encodes the required RSA key pair version together with AES-256-GCM as the file
 /// content cipher.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum FileKeyVersion {
     #[serde(rename = "A")]
@@ -20,6 +21,7 @@ pub enum FileKeyVersion {
 /// Version of the plain file key.
 ///
 /// DRACOON currently uses AES-256-GCM only.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum PlainFileKeyVersion {
     #[serde(rename = "AES-256-GCM")]
@@ -29,6 +31,7 @@ pub enum PlainFileKeyVersion {
 /// Version of the user key pair.
 ///
 /// RSA-4096 is the default. RSA-2048 is kept for compatibility.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum UserKeyPairVersion {
     #[serde(rename = "A")]
@@ -40,6 +43,7 @@ pub enum UserKeyPairVersion {
 /// Wrapped file key used to decrypt AES-256-GCM file content.
 ///
 /// `key`, `iv`, and `tag` are base64-encoded. `key` is wrapped with the receiver's public key.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FileKey {
     pub key: String,
@@ -51,6 +55,7 @@ pub struct FileKey {
 /// Plain file key used for AES-256-GCM file content encryption and decryption.
 ///
 /// `key`, `iv`, and `tag` are base64-encoded.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PlainFileKey {
     pub key: String,
@@ -60,6 +65,7 @@ pub struct PlainFileKey {
 }
 
 /// Public key container used to wrap file keys.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyContainer {
@@ -71,6 +77,7 @@ pub struct PublicKeyContainer {
 }
 
 /// Private key container used to unwrap file keys.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivateKeyContainer {
@@ -84,6 +91,7 @@ pub struct PrivateKeyContainer {
 /// Encrypted user key pair container.
 ///
 /// The private key is protected with a passphrase.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UserKeyPairContainer {
@@ -94,6 +102,7 @@ pub struct UserKeyPairContainer {
 /// Plain user key pair container.
 ///
 /// The private key is unencrypted and ready for cryptographic operations.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PlainUserKeyPairContainer {
@@ -233,6 +242,7 @@ impl PlainFileKey {
 }
 
 /// State of rescue keys in a room.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub enum KeyState {
     #[serde(rename = "none")]
@@ -244,6 +254,7 @@ pub enum KeyState {
 }
 
 /// Rescue-key state for a room.
+#[cfg_attr(feature = "mcp", derive(schemars::JsonSchema))]
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct EncryptionInfo {
     user_key_state: KeyState,

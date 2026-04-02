@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(feature = "mcp")]
+mod mcp;
+
 use openssl::base64;
 use openssl::pkey::{PKey, Private, Public};
 use serde::de::DeserializeOwned;
